@@ -224,13 +224,12 @@ export default function Tool() {
     setCard(c => ({ ...c, imageUrl: url }));
   };
 
-  // ─── Post / Schedule (ใช้ Ads API) ───────────────────────────────
+  // ─── Post / Schedule ──────────────────────────────────────────────
   const handlePost = async () => {
     if (selectedPages.length === 0) return alert('กรุณาเลือก Page อย่างน้อย 1 หน้า');
     if (!card.destinationUrl) return alert('กรุณากรอก Destination URL');
     if (!card.imageUrl) return alert('กรุณาเลือกหรือกรอก URL รูปภาพ');
     if (card.imageUrl.startsWith('blob:')) return alert('รูปนี้ยังอัปโหลดไม่สำเร็จ กรุณารอสักครู่');
-    if (!adAccountId) return alert('กรุณากรอก Ad Account ID');
 
     if (scheduleOn) {
       if (!scheduleDate) return alert('กรุณาเลือกวันและเวลา');
@@ -242,83 +241,53 @@ export default function Tool() {
     setIsPosting(true);
     setPostStatus(selectedPages.map(p => ({ page: p, status: 'pending', error: '' })));
 
-    const actId = `act_${adAccountId.replace('act_', '')}`;
-
-    // ─── Step 1: Upload image ไปที่ Ad Account (ทำครั้งเดียวใช้ทุก page)
-    let imageHash = imageHashCache.current[card.imageUrl];
-    if (!imageHash) {
-      try {
-        const imgParams = new URLSearchParams();
-        imgParams.append('url', card.imageUrl);
-        imgParams.append('access_token', token);
-        const imgRes = await fetch(`https://graph.facebook.com/v19.0/${actId}/adimages`, {
-          method: 'POST', body: imgParams,
-        });
-        const imgData = await imgRes.json();
-        const imgEntry = Object.values(imgData.images || {})[0];
-        if (!imgEntry?.hash) throw new Error(imgData.error?.message || 'Image upload failed');
-        imageHash = imgEntry.hash;
-        imageHashCache.current[card.imageUrl] = imageHash;
-      } catch (err) {
-        setIsPosting(false);
-        return alert('อัปโหลดรูปไม่สำเร็จ: ' + err.message);
-      }
-    }
-
-    // ─── Step 2: โพสต์ทีละ page ผ่าน Ad Creative
     for (let i = 0; i < selectedPages.length; i++) {
       const page = selectedPages[i];
       if (i > 0 && delay > 0) await new Promise(r => setTimeout(r, delay * 1000));
       setPostStatus(prev => prev.map(s => s.page.id === page.id ? { ...s, status: 'posting' } : s));
 
       try {
-        // สร้าง link_data
-        const linkData = {
-          image_hash: imageHash,
-          link: card.destinationUrl,
-          message: primaryText,
-        };
-        if (card.title) linkData.name = card.title;
-        if (card.displayLink) linkData.caption = card.displayLink;
-        if (card.displayLinkDescription) linkData.description = card.displayLinkDescription;
+        // Step 1: อัปโหลดรูปไปที่ Page (unpublished) → ได้ photo_id
+        const uploadParams = new URLSearchParams();
+        uploadParams.append('url', card.imageUrl);
+        uploadParams.append('published', 'false');
+        uploadParams.append('access_token', page.access_token);
+
+        const uploadRes = await fetch(`https://graph.facebook.com/v19.0/${page.id}/photos`, {
+          method: 'POST', body: uploadParams,
+        });
+        const uploadData = await uploadRes.json();
+        if (!uploadData.id) throw new Error(uploadData.error?.message || 'Upload image failed');
+
+        // Step 2: สร้าง link post แนบรูป
+        // *** ไม่ใส่ name/description เพราะ Facebook ห้าม override ถ้าไม่ได้เป็นเจ้าของ domain ***
+        const postParams = new URLSearchParams();
+        postParams.append('message', primaryText);
+        postParams.append('link', card.destinationUrl);
+        postParams.append('object_attachment', uploadData.id);
+        postParams.append('access_token', page.access_token);
+
         if (buttonType !== 'NO_BUTTON') {
-          linkData.call_to_action = { type: buttonType, value: { link: card.destinationUrl } };
+          postParams.append('call_to_action', JSON.stringify({
+            type: buttonType,
+            value: { link: card.destinationUrl },
+          }));
         }
 
-        // สร้าง Ad Creative → ได้ page post อัตโนมัติ
-        const creativeParams = new URLSearchParams();
-        creativeParams.append('name', `post_${page.id}_${Date.now()}`);
-        creativeParams.append('object_story_spec', JSON.stringify({
-          page_id: page.id,
-          link_data: linkData,
-        }));
-        creativeParams.append('access_token', token);
-
-        const creativeRes = await fetch(`https://graph.facebook.com/v19.0/${actId}/adcreatives`, {
-          method: 'POST', body: creativeParams,
-        });
-        const creativeData = await creativeRes.json();
-        if (!creativeData.effective_object_story_id) {
-          throw new Error(creativeData.error?.message || 'Create creative failed');
-        }
-
-        const storyId = creativeData.effective_object_story_id;
-
-        // ─── Step 3: Publish / Schedule / Draft
-        const pubParams = new URLSearchParams();
-        pubParams.append('access_token', page.access_token);
         if (scheduleOn && scheduleDate) {
-          pubParams.append('is_published', 'false');
-          pubParams.append('scheduled_publish_time', String(Math.floor(new Date(scheduleDate).getTime() / 1000)));
+          postParams.append('published', 'false');
+          postParams.append('scheduled_publish_time', String(Math.floor(new Date(scheduleDate).getTime() / 1000)));
         } else if (saveAsDraft || hidePost) {
-          pubParams.append('is_published', 'false');
+          postParams.append('published', 'false');
         } else {
-          pubParams.append('is_published', 'true');
+          postParams.append('published', 'true');
         }
 
-        await fetch(`https://graph.facebook.com/v19.0/${storyId}`, {
-          method: 'POST', body: pubParams,
+        const postRes = await fetch(`https://graph.facebook.com/v19.0/${page.id}/feed`, {
+          method: 'POST', body: postParams,
         });
+        const postData = await postRes.json();
+        if (!postData.id) throw new Error(postData.error?.message || 'Post failed');
 
         setPostStatus(prev => prev.map(s => s.page.id === page.id ? { ...s, status: 'done' } : s));
       } catch (err) {
