@@ -191,46 +191,69 @@ export default function Tool() {
       setPostStatus(prev => prev.map(s => s.page.id === page.id ? { ...s, status: 'posting' } : s));
 
       try {
-        const params = new URLSearchParams();
-        params.append('message', primaryText);
-        params.append('link', card.destinationUrl);
-        params.append('access_token', page.access_token);
+        // สร้างข้อความรวมลิงก์
+        const fullMessage = [
+          primaryText,
+          card.destinationUrl ? card.destinationUrl : ''
+        ].filter(Boolean).join('\n\n');
 
-        if (card.title) params.append('name', card.title);
-        if (card.displayLink) params.append('caption', card.displayLink);
-        if (card.displayLinkDescription) params.append('description', card.displayLinkDescription);
+        let postId = null;
+
         if (card.imageUrl && !card.imageUrl.startsWith('data:')) {
-          params.append('picture', card.imageUrl);
-        }
+          // โพสต์แบบรูปภาพ (ไม่ติด error เรื่อง URL ownership)
+          const photoParams = new URLSearchParams();
+          photoParams.append('caption', fullMessage);
+          photoParams.append('url', card.imageUrl);
+          photoParams.append('access_token', page.access_token);
 
-        if (buttonType !== 'NO_BUTTON') {
-          params.append('call_to_action', JSON.stringify({
-            type: buttonType,
-            value: { link: card.destinationUrl }
-          }));
-        }
+          if (scheduleOn && scheduleDate) {
+            photoParams.append('published', 'false');
+            photoParams.append('scheduled_publish_time', String(Math.floor(new Date(scheduleDate).getTime() / 1000)));
+          } else if (saveAsDraft || hidePost) {
+            photoParams.append('published', 'false');
+          } else {
+            photoParams.append('published', 'true');
+          }
 
-        if (scheduleOn && scheduleDate) {
-          params.append('published', 'false');
-          params.append('scheduled_publish_time', String(Math.floor(new Date(scheduleDate).getTime() / 1000)));
-        } else if (saveAsDraft) {
-          params.append('published', 'false');
-        } else if (hidePost) {
-          params.append('published', 'false');
+          const photoRes = await fetch(`https://graph.facebook.com/v19.0/${page.id}/photos`, {
+            method: 'POST',
+            body: photoParams,
+          });
+          const photoData = await photoRes.json();
+          if (photoData.id) {
+            postId = photoData.id;
+          } else {
+            throw new Error(photoData.error?.message || 'Unknown error');
+          }
         } else {
-          params.append('published', 'true');
+          // โพสต์แบบข้อความอย่างเดียว (ไม่มีรูป)
+          const params = new URLSearchParams();
+          params.append('message', fullMessage);
+          params.append('access_token', page.access_token);
+
+          if (scheduleOn && scheduleDate) {
+            params.append('published', 'false');
+            params.append('scheduled_publish_time', String(Math.floor(new Date(scheduleDate).getTime() / 1000)));
+          } else if (saveAsDraft || hidePost) {
+            params.append('published', 'false');
+          } else {
+            params.append('published', 'true');
+          }
+
+          const res = await fetch(`https://graph.facebook.com/v19.0/${page.id}/feed`, {
+            method: 'POST',
+            body: params,
+          });
+          const data = await res.json();
+          if (data.id) {
+            postId = data.id;
+          } else {
+            throw new Error(data.error?.message || 'Unknown error');
+          }
         }
 
-        const res = await fetch(`https://graph.facebook.com/v19.0/${page.id}/feed`, {
-          method: 'POST',
-          body: params,
-        });
-        const data = await res.json();
-
-        if (data.id) {
+        if (postId) {
           setPostStatus(prev => prev.map(s => s.page.id === page.id ? { ...s, status: 'done' } : s));
-        } else {
-          throw new Error(data.error?.message || 'Unknown error');
         }
       } catch (err) {
         setPostStatus(prev => prev.map(s =>
