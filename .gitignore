@@ -1,0 +1,13 @@
+# dependencies
+node_modules/
+
+# env files (ห้าม push ขึ้น GitHub เด็ดขาด!)
+.env.local
+.env
+
+# Next.js
+.next/
+out/
+
+# misc
+.DS_Store
