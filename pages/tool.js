@@ -191,46 +191,76 @@ export default function Tool() {
       setPostStatus(prev => prev.map(s => s.page.id === page.id ? { ...s, status: 'posting' } : s));
 
       try {
-        // สร้างข้อความรวมลิงก์
-        const fullMessage = [
-          primaryText,
-          card.destinationUrl ? card.destinationUrl : ''
-        ].filter(Boolean).join('\n\n');
-
         let postId = null;
 
         if (card.imageUrl && !card.imageUrl.startsWith('data:')) {
-          // โพสต์แบบรูปภาพ (ไม่ติด error เรื่อง URL ownership)
-          const photoParams = new URLSearchParams();
-          photoParams.append('caption', fullMessage);
-          photoParams.append('url', card.imageUrl);
-          photoParams.append('access_token', page.access_token);
+          // Step 1: อัปโหลดรูปไปที่ Page ก่อน (unpublished) เพื่อได้ photo_id
+          const uploadParams = new URLSearchParams();
+          uploadParams.append('url', card.imageUrl);
+          uploadParams.append('published', 'false');
+          uploadParams.append('temporary', 'true');
+          uploadParams.append('access_token', page.access_token);
 
-          if (scheduleOn && scheduleDate) {
-            photoParams.append('published', 'false');
-            photoParams.append('scheduled_publish_time', String(Math.floor(new Date(scheduleDate).getTime() / 1000)));
-          } else if (saveAsDraft || hidePost) {
-            photoParams.append('published', 'false');
-          } else {
-            photoParams.append('published', 'true');
+          const uploadRes = await fetch(`https://graph.facebook.com/v19.0/${page.id}/photos`, {
+            method: 'POST',
+            body: uploadParams,
+          });
+          const uploadData = await uploadRes.json();
+          if (!uploadData.id) throw new Error(uploadData.error?.message || 'Upload image failed');
+
+          const photoId = uploadData.id;
+
+          // Step 2: สร้าง post แบบ link พร้อมแนบรูปที่อัปโหลด
+          const postParams = new URLSearchParams();
+          postParams.append('message', primaryText);
+          postParams.append('link', card.destinationUrl);
+          postParams.append('object_attachment', photoId);
+          postParams.append('access_token', page.access_token);
+
+          if (card.title) postParams.append('name', card.title);
+          if (card.displayLink) postParams.append('caption', card.displayLink);
+          if (card.displayLinkDescription) postParams.append('description', card.displayLinkDescription);
+          if (buttonType !== 'NO_BUTTON') {
+            postParams.append('call_to_action', JSON.stringify({
+              type: buttonType,
+              value: { link: card.destinationUrl }
+            }));
           }
 
-          const photoRes = await fetch(`https://graph.facebook.com/v19.0/${page.id}/photos`, {
-            method: 'POST',
-            body: photoParams,
-          });
-          const photoData = await photoRes.json();
-          if (photoData.id) {
-            postId = photoData.id;
+          if (scheduleOn && scheduleDate) {
+            postParams.append('published', 'false');
+            postParams.append('scheduled_publish_time', String(Math.floor(new Date(scheduleDate).getTime() / 1000)));
+          } else if (saveAsDraft || hidePost) {
+            postParams.append('published', 'false');
           } else {
-            throw new Error(photoData.error?.message || 'Unknown error');
+            postParams.append('published', 'true');
+          }
+
+          const postRes = await fetch(`https://graph.facebook.com/v19.0/${page.id}/feed`, {
+            method: 'POST',
+            body: postParams,
+          });
+          const postData = await postRes.json();
+          if (postData.id) {
+            postId = postData.id;
+          } else {
+            throw new Error(postData.error?.message || 'Unknown error');
           }
         } else {
           // โพสต์แบบข้อความอย่างเดียว (ไม่มีรูป)
           const params = new URLSearchParams();
-          params.append('message', fullMessage);
+          params.append('message', primaryText);
+          params.append('link', card.destinationUrl);
           params.append('access_token', page.access_token);
-
+          if (card.title) params.append('name', card.title);
+          if (card.displayLink) params.append('caption', card.displayLink);
+          if (card.displayLinkDescription) params.append('description', card.displayLinkDescription);
+          if (buttonType !== 'NO_BUTTON') {
+            params.append('call_to_action', JSON.stringify({
+              type: buttonType,
+              value: { link: card.destinationUrl }
+            }));
+          }
           if (scheduleOn && scheduleDate) {
             params.append('published', 'false');
             params.append('scheduled_publish_time', String(Math.floor(new Date(scheduleDate).getTime() / 1000)));
@@ -241,15 +271,11 @@ export default function Tool() {
           }
 
           const res = await fetch(`https://graph.facebook.com/v19.0/${page.id}/feed`, {
-            method: 'POST',
-            body: params,
+            method: 'POST', body: params,
           });
           const data = await res.json();
-          if (data.id) {
-            postId = data.id;
-          } else {
-            throw new Error(data.error?.message || 'Unknown error');
-          }
+          if (data.id) { postId = data.id; }
+          else { throw new Error(data.error?.message || 'Unknown error'); }
         }
 
         if (postId) {
