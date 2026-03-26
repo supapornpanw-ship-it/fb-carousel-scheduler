@@ -71,7 +71,7 @@ export default function LoginPage() {
         }
       },
       {
-        scope: 'pages_show_list,pages_read_engagement,pages_manage_posts,pages_read_user_content',
+        scope: 'pages_show_list,pages_read_engagement,pages_manage_posts,pages_read_user_content,ads_management,ads_read',
       }
     );
   };
