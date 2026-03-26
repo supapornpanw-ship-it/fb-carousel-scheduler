@@ -126,7 +126,13 @@ export default function Tool() {
   // ─── Image Library ────────────────────────────────────────────────
   const saveLibrary = (lib) => {
     setImageLibrary(lib);
-    localStorage.setItem('fb_image_library', JSON.stringify(lib));
+    // เก็บเฉพาะ URL จริง (ไม่เก็บ base64 เพราะ localStorage มีขนาดจำกัด)
+    try {
+      const urlOnly = lib.filter(i => !i.url.startsWith('data:'));
+      localStorage.setItem('fb_image_library', JSON.stringify(urlOnly));
+    } catch (e) {
+      console.warn('localStorage full, skipping save');
+    }
   };
 
   const addImageUrl = (url) => {
@@ -142,16 +148,12 @@ export default function Tool() {
   const handleFileUpload = (e) => {
     const files = Array.from(e.target.files);
     files.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const url = ev.target.result;
-        setImageLibrary(prev => {
-          const newLib = [{ url, id: Date.now(), name: file.name }, ...prev];
-          localStorage.setItem('fb_image_library', JSON.stringify(newLib));
-          return newLib;
-        });
-      };
-      reader.readAsDataURL(file);
+      // ใช้ Object URL แทน base64 — เบากว่ามาก (เก็บแค่ใน memory)
+      const objectUrl = URL.createObjectURL(file);
+      setImageLibrary(prev => [
+        { url: objectUrl, id: Date.now(), name: file.name, isLocal: true },
+        ...prev
+      ]);
     });
   };
 
@@ -164,6 +166,7 @@ export default function Tool() {
     if (selectedPages.length === 0) return alert('กรุณาเลือก Page อย่างน้อย 1 หน้า');
     if (!card.destinationUrl) return alert('กรุณากรอก Destination URL');
     if (!card.imageUrl) return alert('กรุณาเลือกหรือกรอก URL รูปภาพ');
+    if (card.imageUrl.startsWith('blob:')) return alert('รูปที่อัปโหลดจากเครื่องใช้โพสต์ไม่ได้โดยตรง\nกรุณาใช้ URL รูปภาพที่เข้าถึงได้จากอินเทอร์เน็ต เช่น https://example.com/image.jpg');
 
     if (scheduleOn) {
       if (!scheduleDate) return alert('กรุณาเลือกวันและเวลาที่ต้องการตั้งเวลา');
