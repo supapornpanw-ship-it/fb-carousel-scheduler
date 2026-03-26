@@ -145,16 +145,73 @@ export default function Tool() {
     saveLibrary(imageLibrary.filter(i => i.id !== id));
   };
 
-  const handleFileUpload = (e) => {
+  const handleFileUpload = async (e) => {
     const files = Array.from(e.target.files);
-    files.forEach(file => {
-      // ใช้ Object URL แทน base64 — เบากว่ามาก (เก็บแค่ใน memory)
-      const objectUrl = URL.createObjectURL(file);
+    const pageToken = pages[0]?.access_token;
+    const pageId = pages[0]?.id;
+
+    for (const file of files) {
+      const tempId = Date.now() + Math.random();
+      const previewUrl = URL.createObjectURL(file);
+
+      // แสดงรูป preview พร้อม loading ก่อน
       setImageLibrary(prev => [
-        { url: objectUrl, id: Date.now(), name: file.name, isLocal: true },
+        { id: tempId, url: previewUrl, name: file.name, loading: true },
         ...prev
       ]);
-    });
+
+      if (!pageToken || !pageId) {
+        // ยังไม่มี page token — เก็บแค่ preview ไว้ก่อน
+        setImageLibrary(prev => prev.map(i => i.id === tempId ? { ...i, loading: false } : i));
+        continue;
+      }
+
+      try {
+        // อัปโหลดรูปขึ้น Facebook (unpublished)
+        const formData = new FormData();
+        formData.append('source', file);
+        formData.append('published', 'false');
+        formData.append('access_token', pageToken);
+
+        const uploadRes = await fetch(`https://graph.facebook.com/v19.0/${pageId}/photos`, {
+          method: 'POST',
+          body: formData,
+        });
+        const uploadData = await uploadRes.json();
+
+        if (uploadData.id) {
+          // ดึง URL จริงจาก Facebook
+          const infoRes = await fetch(
+            `https://graph.facebook.com/v19.0/${uploadData.id}?fields=images&access_token=${pageToken}`
+          );
+          const infoData = await infoRes.json();
+          const fbUrl = infoData.images?.[0]?.source;
+
+          if (fbUrl) {
+            setImageLibrary(prev => {
+              const updated = prev.map(i =>
+                i.id === tempId ? { id: tempId, url: fbUrl, name: file.name, fbId: uploadData.id, loading: false } : i
+              );
+              try {
+                const urlOnly = updated.filter(i => !i.loading && !i.url.startsWith('blob:'));
+                localStorage.setItem('fb_image_library', JSON.stringify(urlOnly));
+              } catch (err) {}
+              return updated;
+            });
+          } else {
+            setImageLibrary(prev => prev.map(i => i.id === tempId ? { ...i, loading: false } : i));
+          }
+        } else {
+          throw new Error(uploadData.error?.message || 'Upload failed');
+        }
+      } catch (err) {
+        console.error('Upload error:', err);
+        // ถ้า error ให้แสดง preview ไว้ก่อน
+        setImageLibrary(prev => prev.map(i =>
+          i.id === tempId ? { ...i, loading: false, uploadError: true } : i
+        ));
+      }
+    }
   };
 
   const selectImage = (url) => {
@@ -166,7 +223,7 @@ export default function Tool() {
     if (selectedPages.length === 0) return alert('กรุณาเลือก Page อย่างน้อย 1 หน้า');
     if (!card.destinationUrl) return alert('กรุณากรอก Destination URL');
     if (!card.imageUrl) return alert('กรุณาเลือกหรือกรอก URL รูปภาพ');
-    if (card.imageUrl.startsWith('blob:')) return alert('รูปที่อัปโหลดจากเครื่องใช้โพสต์ไม่ได้โดยตรง\nกรุณาใช้ URL รูปภาพที่เข้าถึงได้จากอินเทอร์เน็ต เช่น https://example.com/image.jpg');
+    if (card.imageUrl.startsWith('blob:')) return alert('รูปนี้ยังอัปโหลดขึ้น Facebook ไม่สำเร็จ\nกรุณารอสักครู่หรือเลือกรูปใหม่');
 
     if (scheduleOn) {
       if (!scheduleDate) return alert('กรุณาเลือกวันและเวลาที่ต้องการตั้งเวลา');
@@ -689,9 +746,18 @@ export default function Tool() {
                     <div
                       key={img.id}
                       className={`relative group aspect-square rounded-lg overflow-hidden cursor-pointer border-2 transition ${card.imageUrl === img.url ? 'border-teal-500 shadow-md' : 'border-transparent hover:border-teal-300'}`}
-                      onClick={() => selectImage(img.url)}
+                      onClick={() => !img.loading && selectImage(img.url)}
                     >
                       <img src={img.url} alt="" className="w-full h-full object-cover"/>
+                      {img.loading && (
+                        <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-1">
+                          <svg className="w-5 h-5 text-white animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                          </svg>
+                          <span className="text-white text-xs">กำลังอัปโหลด...</span>
+                        </div>
+                      )}
                       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition flex items-center justify-center">
                         <button
                           onClick={e => { e.stopPropagation(); removeImage(img.id); }}
