@@ -225,11 +225,13 @@ export default function Tool() {
   };
 
   // ─── Post / Schedule ──────────────────────────────────────────────
-  // Photo post — รูปเต็ม caption ข้อความล้วน ไม่มี URL ใดๆ ในโพสต์
+  // Link-card post: รูปเต็ม + link card ใต้รูป (domain + ชื่อ + ปุ่ม CTA)
+  // ใช้ /p proxy page เพื่อให้ Facebook scraper อ่าน OG tags ของเรา
   const handlePost = async () => {
     if (selectedPages.length === 0) return alert('กรุณาเลือก Page อย่างน้อย 1 หน้า');
     if (!card.imageUrl) return alert('กรุณาเลือกหรือกรอก URL รูปภาพ');
     if (card.imageUrl.startsWith('blob:')) return alert('รูปนี้ยังอัปโหลดไม่สำเร็จ กรุณารอสักครู่');
+    if (!card.destinationUrl) return alert('กรุณากรอก Destination URL');
 
     if (scheduleOn) {
       if (!scheduleDate) return alert('กรุณาเลือกวันและเวลา');
@@ -241,28 +243,55 @@ export default function Tool() {
     setIsPosting(true);
     setPostStatus(selectedPages.map(p => ({ page: p, status: 'pending', error: '' })));
 
+    // สร้าง proxy URL ที่ชี้ไปหน้า /p ของเรา
+    // Facebook scraper จะอ่าน OG จากหน้านี้ → ได้รูป+ชื่อ+desc ของเรา
+    // ผู้ใช้กดแล้วจะ redirect ไป destinationUrl
+    const base = window.location.origin;
+    const proxyUrl = `${base}/p?${new URLSearchParams({
+      img: card.imageUrl,
+      ti: card.title || '.',   // '.' → /p จะ auto-fetch og:title จาก destUrl
+      de: card.displayLinkDescription || '',
+      r: card.destinationUrl,
+    }).toString()}`;
+
     for (let i = 0; i < selectedPages.length; i++) {
       const page = selectedPages[i];
       if (i > 0 && delay > 0) await new Promise(r => setTimeout(r, delay * 1000));
       setPostStatus(prev => prev.map(s => s.page.id === page.id ? { ...s, status: 'posting' } : s));
 
       try {
-        const photoParams = new URLSearchParams();
-        photoParams.append('url', card.imageUrl);
-        if (primaryText) photoParams.append('caption', primaryText);
-        photoParams.append('access_token', page.access_token);
+        // บังคับ Facebook re-scrape proxy URL ก่อนโพสต์
+        try {
+          await fetch(
+            `https://graph.facebook.com/v19.0/?id=${encodeURIComponent(proxyUrl)}&scrape=true&access_token=${page.access_token}`,
+            { method: 'POST' }
+          );
+        } catch {}
 
-        if (scheduleOn && scheduleDate) {
-          photoParams.append('published', 'false');
-          photoParams.append('scheduled_publish_time', String(Math.floor(new Date(scheduleDate).getTime() / 1000)));
-        } else if (saveAsDraft || hidePost) {
-          photoParams.append('published', 'false');
-        } else {
-          photoParams.append('published', 'true');
+        const feedParams = new URLSearchParams();
+        feedParams.append('message', primaryText || '');
+        feedParams.append('link', proxyUrl);
+        feedParams.append('access_token', page.access_token);
+
+        // ปุ่ม CTA ใต้รูป (Shop Now, Learn More ฯลฯ)
+        if (buttonType && buttonType !== 'NO_BUTTON') {
+          feedParams.append('call_to_action', JSON.stringify({
+            type: buttonType,
+            value: { link: card.destinationUrl },
+          }));
         }
 
-        const res = await fetch(`https://graph.facebook.com/v19.0/${page.id}/photos`, {
-          method: 'POST', body: photoParams,
+        if (scheduleOn && scheduleDate) {
+          feedParams.append('published', 'false');
+          feedParams.append('scheduled_publish_time', String(Math.floor(new Date(scheduleDate).getTime() / 1000)));
+        } else if (saveAsDraft || hidePost) {
+          feedParams.append('published', 'false');
+        } else {
+          feedParams.append('published', 'true');
+        }
+
+        const res = await fetch(`https://graph.facebook.com/v19.0/${page.id}/feed`, {
+          method: 'POST', body: feedParams,
         });
         const data = await res.json();
         if (!data.id) throw new Error(data.error?.message || 'Post failed');
