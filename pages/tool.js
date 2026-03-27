@@ -225,11 +225,9 @@ export default function Tool() {
   };
 
   // ─── Post / Schedule ──────────────────────────────────────────────
-  // วิธีนี้ใช้ proxy page บน Vercel ของเราเอง เพื่อให้ Facebook
-  // scrape รูป+ชื่อ+คำบรรยายจาก domain ที่เราเป็นเจ้าของได้
+  // Photo post — รูปเต็ม 100% ลิงก์อยู่ในแคปชั่น
   const handlePost = async () => {
     if (selectedPages.length === 0) return alert('กรุณาเลือก Page อย่างน้อย 1 หน้า');
-    if (!card.destinationUrl) return alert('กรุณากรอก Destination URL');
     if (!card.imageUrl) return alert('กรุณาเลือกหรือกรอก URL รูปภาพ');
     if (card.imageUrl.startsWith('blob:')) return alert('รูปนี้ยังอัปโหลดไม่สำเร็จ กรุณารอสักครู่');
 
@@ -243,25 +241,8 @@ export default function Tool() {
     setIsPosting(true);
     setPostStatus(selectedPages.map(p => ({ page: p, status: 'pending', error: '' })));
 
-    // สร้าง proxy URL บน domain ของเรา (fb-carousel-scheduler.vercel.app)
-    // Facebook จะ scrape OG tags จากหน้านี้ → ได้รูป+ชื่อ+คำบรรยายที่เราตั้งไว้
-    // พอผู้ใช้กดคลิก → redirect ไปหน้าสินค้าจริง
-    const base = typeof window !== 'undefined' ? window.location.origin : 'https://fb-carousel-scheduler.vercel.app';
-    // ใช้ชื่อ param สั้นๆ เพื่อไม่ให้ Facebook scraper ตาม URL ปลายทาง → ป้องกัน collage
-    const proxyUrl = `${base}/p?t=${Date.now()}`
-      + `&img=${encodeURIComponent(card.imageUrl)}`
-      + `&ti=${encodeURIComponent(card.title || '')}`
-      + `&de=${encodeURIComponent(card.displayLinkDescription || '')}`
-      + `&r=${encodeURIComponent(card.destinationUrl)}`;
-
-    // Force Facebook scrape proxy URL ก่อนโพสต์ แล้วรอให้ scrape เสร็จ
-    try {
-      await fetch(`https://graph.facebook.com/v19.0/?id=${encodeURIComponent(proxyUrl)}&scrape=true&access_token=${token}`, {
-        method: 'POST',
-      });
-    } catch {}
-    // รอ 3 วินาทีให้ Facebook cache OG data จาก proxy page
-    await new Promise(r => setTimeout(r, 3000));
+    // สร้าง caption = ข้อความ + ลิงก์ปลายทาง
+    const caption = [primaryText, card.destinationUrl].filter(Boolean).join('\n\n');
 
     for (let i = 0; i < selectedPages.length; i++) {
       const page = selectedPages[i];
@@ -269,32 +250,25 @@ export default function Tool() {
       setPostStatus(prev => prev.map(s => s.page.id === page.id ? { ...s, status: 'posting' } : s));
 
       try {
-        const postParams = new URLSearchParams();
-        postParams.append('message', primaryText);
-        postParams.append('link', proxyUrl);
-        postParams.append('access_token', page.access_token);
-
-        if (buttonType !== 'NO_BUTTON') {
-          postParams.append('call_to_action', JSON.stringify({
-            type: buttonType,
-            value: { link: proxyUrl },
-          }));
-        }
+        const photoParams = new URLSearchParams();
+        photoParams.append('url', card.imageUrl);
+        photoParams.append('caption', caption);
+        photoParams.append('access_token', page.access_token);
 
         if (scheduleOn && scheduleDate) {
-          postParams.append('published', 'false');
-          postParams.append('scheduled_publish_time', String(Math.floor(new Date(scheduleDate).getTime() / 1000)));
+          photoParams.append('published', 'false');
+          photoParams.append('scheduled_publish_time', String(Math.floor(new Date(scheduleDate).getTime() / 1000)));
         } else if (saveAsDraft || hidePost) {
-          postParams.append('published', 'false');
+          photoParams.append('published', 'false');
         } else {
-          postParams.append('published', 'true');
+          photoParams.append('published', 'true');
         }
 
-        const postRes = await fetch(`https://graph.facebook.com/v19.0/${page.id}/feed`, {
-          method: 'POST', body: postParams,
+        const res = await fetch(`https://graph.facebook.com/v19.0/${page.id}/photos`, {
+          method: 'POST', body: photoParams,
         });
-        const postData = await postRes.json();
-        if (!postData.id) throw new Error(postData.error?.message || 'Post failed');
+        const data = await res.json();
+        if (!data.id) throw new Error(data.error?.message || 'Post failed');
 
         setPostStatus(prev => prev.map(s => s.page.id === page.id ? { ...s, status: 'done' } : s));
       } catch (err) {
