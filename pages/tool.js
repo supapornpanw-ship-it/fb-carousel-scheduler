@@ -224,13 +224,14 @@ export default function Tool() {
     setCard(c => ({ ...c, imageUrl: url }));
   };
 
-  // ─── Post / Schedule (ใช้ Ads API เพื่อแนบรูป+ลิงก์+ปุ่มได้อิสระ) ──
+  // ─── Post / Schedule ──────────────────────────────────────────────
+  // วิธีนี้ใช้ proxy page บน Vercel ของเราเอง เพื่อให้ Facebook
+  // scrape รูป+ชื่อ+คำบรรยายจาก domain ที่เราเป็นเจ้าของได้
   const handlePost = async () => {
     if (selectedPages.length === 0) return alert('กรุณาเลือก Page อย่างน้อย 1 หน้า');
     if (!card.destinationUrl) return alert('กรุณากรอก Destination URL');
     if (!card.imageUrl) return alert('กรุณาเลือกหรือกรอก URL รูปภาพ');
     if (card.imageUrl.startsWith('blob:')) return alert('รูปนี้ยังอัปโหลดไม่สำเร็จ กรุณารอสักครู่');
-    if (!adAccountId) return alert('กรุณากรอก Ad Account ID');
 
     if (scheduleOn) {
       if (!scheduleDate) return alert('กรุณาเลือกวันและเวลา');
@@ -242,87 +243,55 @@ export default function Tool() {
     setIsPosting(true);
     setPostStatus(selectedPages.map(p => ({ page: p, status: 'pending', error: '' })));
 
-    // Step 1: อัปโหลดรูปไปที่ Ad Account ONCE (ใช้ cache ถ้ารูปเดิม)
-    let imageHash = imageHashCache.current[card.imageUrl];
-    if (!imageHash) {
-      try {
-        const imgParams = new URLSearchParams();
-        imgParams.append('url', card.imageUrl);
-        imgParams.append('access_token', token);
+    // สร้าง proxy URL บน domain ของเรา (fb-carousel-scheduler.vercel.app)
+    // Facebook จะ scrape OG tags จากหน้านี้ → ได้รูป+ชื่อ+คำบรรยายที่เราตั้งไว้
+    // พอผู้ใช้กดคลิก → redirect ไปหน้าสินค้าจริง
+    const base = typeof window !== 'undefined' ? window.location.origin : 'https://fb-carousel-scheduler.vercel.app';
+    const proxyUrl = `${base}/p?t=${Date.now()}`
+      + `&img=${encodeURIComponent(card.imageUrl)}`
+      + `&title=${encodeURIComponent(card.title || '')}`
+      + `&desc=${encodeURIComponent(card.displayLinkDescription || '')}`
+      + `&url=${encodeURIComponent(card.destinationUrl)}`;
 
-        const imgRes = await fetch(`https://graph.facebook.com/v19.0/act_${adAccountId}/adimages`, {
-          method: 'POST', body: imgParams,
-        });
-        const imgData = await imgRes.json();
+    // Force Facebook scrape proxy URL ก่อนโพสต์
+    try {
+      await fetch(`https://graph.facebook.com/v19.0/?id=${encodeURIComponent(proxyUrl)}&scrape=true&access_token=${token}`, {
+        method: 'POST',
+      });
+    } catch {}
 
-        if (imgData.images) {
-          imageHash = Object.values(imgData.images)[0].hash;
-          imageHashCache.current[card.imageUrl] = imageHash;
-        } else {
-          throw new Error(imgData.error?.message || 'Image upload failed');
-        }
-      } catch (err) {
-        alert('อัปโหลดรูปไม่สำเร็จ: ' + err.message);
-        setIsPosting(false);
-        return;
-      }
-    }
-
-    // Step 2: โพสต์ไปแต่ละ Page ผ่าน Ad Creative
     for (let i = 0; i < selectedPages.length; i++) {
       const page = selectedPages[i];
       if (i > 0 && delay > 0) await new Promise(r => setTimeout(r, delay * 1000));
       setPostStatus(prev => prev.map(s => s.page.id === page.id ? { ...s, status: 'posting' } : s));
 
       try {
-        // สร้าง link_data สำหรับ Ad Creative
-        const linkData = {
-          image_hash: imageHash,
-          link: card.destinationUrl,
-          message: primaryText,
-        };
-        if (card.title) linkData.name = card.title;
-        if (card.displayLinkDescription) linkData.description = card.displayLinkDescription;
-        if (card.displayLink) linkData.caption = card.displayLink;
+        const postParams = new URLSearchParams();
+        postParams.append('message', primaryText);
+        postParams.append('link', proxyUrl);
+        postParams.append('access_token', page.access_token);
+
         if (buttonType !== 'NO_BUTTON') {
-          linkData.call_to_action = { type: buttonType, value: { link: card.destinationUrl } };
+          postParams.append('call_to_action', JSON.stringify({
+            type: buttonType,
+            value: { link: proxyUrl },
+          }));
         }
-
-        // สร้าง Ad Creative → ได้ dark post บน Page
-        const creativeParams = new URLSearchParams();
-        creativeParams.append('name', `Post_${page.id}_${Date.now()}`);
-        creativeParams.append('object_story_spec', JSON.stringify({
-          page_id: page.id,
-          link_data: linkData,
-        }));
-        creativeParams.append('access_token', token);
-
-        const creativeRes = await fetch(`https://graph.facebook.com/v19.0/act_${adAccountId}/adcreatives`, {
-          method: 'POST', body: creativeParams,
-        });
-        const creativeData = await creativeRes.json();
-        if (!creativeData.id) throw new Error(creativeData.error?.message || 'Creative failed');
-
-        // effective_object_story_id = ID ของ Page post จริงๆ
-        const postId = creativeData.effective_object_story_id;
-        if (!postId) throw new Error('ไม่ได้รับ post ID จาก Creative');
-
-        // Publish / Schedule ผ่าน Page token
-        const pubParams = new URLSearchParams();
-        pubParams.append('access_token', page.access_token);
 
         if (scheduleOn && scheduleDate) {
-          pubParams.append('scheduled_publish_time', String(Math.floor(new Date(scheduleDate).getTime() / 1000)));
-          pubParams.append('is_published', 'false');
+          postParams.append('published', 'false');
+          postParams.append('scheduled_publish_time', String(Math.floor(new Date(scheduleDate).getTime() / 1000)));
         } else if (saveAsDraft || hidePost) {
-          pubParams.append('is_published', 'false');
+          postParams.append('published', 'false');
         } else {
-          pubParams.append('is_published', 'true');
+          postParams.append('published', 'true');
         }
 
-        await fetch(`https://graph.facebook.com/v19.0/${postId}`, {
-          method: 'POST', body: pubParams,
+        const postRes = await fetch(`https://graph.facebook.com/v19.0/${page.id}/feed`, {
+          method: 'POST', body: postParams,
         });
+        const postData = await postRes.json();
+        if (!postData.id) throw new Error(postData.error?.message || 'Post failed');
 
         setPostStatus(prev => prev.map(s => s.page.id === page.id ? { ...s, status: 'done' } : s));
       } catch (err) {
