@@ -57,7 +57,7 @@ export default function ProxyPage({ img, title, desc, destUrl }) {
         <meta property="og:description" content={desc} />
         <meta property="og:image" content={img} />
         <meta property="og:image:width" content="1200" />
-        <meta property="og:image:height" content="630" />
+        <meta property="og:image:height" content="1200" />
         <meta property="og:type" content="website" />
       </Head>
       <div style={{
