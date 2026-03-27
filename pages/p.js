@@ -4,9 +4,12 @@ import { useEffect } from 'react';
 // หน้านี้ทำหน้าที่ 2 อย่าง:
 // 1. ให้ Facebook scrape OG tags (รูป+ชื่อ+คำบรรยาย) ของเราได้
 // 2. Redirect ผู้ใช้ไปยัง URL ปลายทางจริง
-export async function getServerSideProps({ query }) {
-  const { img = '', title = '', desc = '', url = '', t = '' } = query;
-  return { props: { img, title, desc, url, t } };
+export async function getServerSideProps({ query, req }) {
+  const { img = '', title = '', desc = '', url = '' } = query;
+  const base = `https://${req.headers.host}`;
+  // ส่งรูปผ่าน image proxy ของเราแทน เพื่อให้ Facebook scraper เห็นได้
+  const proxyImg = img ? `${base}/api/img?url=${encodeURIComponent(img)}` : '';
+  return { props: { img: proxyImg, title, desc, url } };
 }
 
 export default function ProxyPage({ img, title, desc, url }) {
