@@ -225,7 +225,7 @@ export default function Tool() {
   };
 
   // ─── Post / Schedule ──────────────────────────────────────────────
-  // Photo post — รูปเต็ม caption สะอาด ลิงก์ไปอยู่ใน comment แรก
+  // Photo post — รูปเต็ม caption ข้อความล้วน ไม่มี URL ใดๆ ในโพสต์
   const handlePost = async () => {
     if (selectedPages.length === 0) return alert('กรุณาเลือก Page อย่างน้อย 1 หน้า');
     if (!card.imageUrl) return alert('กรุณาเลือกหรือกรอก URL รูปภาพ');
@@ -241,9 +241,6 @@ export default function Tool() {
     setIsPosting(true);
     setPostStatus(selectedPages.map(p => ({ page: p, status: 'pending', error: '' })));
 
-    // caption = ข้อความล้วน ไม่มี URL (URL จะโพสต์เป็น comment แทน)
-    const caption = primaryText || '';
-
     for (let i = 0; i < selectedPages.length; i++) {
       const page = selectedPages[i];
       if (i > 0 && delay > 0) await new Promise(r => setTimeout(r, delay * 1000));
@@ -252,7 +249,7 @@ export default function Tool() {
       try {
         const photoParams = new URLSearchParams();
         photoParams.append('url', card.imageUrl);
-        if (caption) photoParams.append('caption', caption);
+        if (primaryText) photoParams.append('caption', primaryText);
         photoParams.append('access_token', page.access_token);
 
         if (scheduleOn && scheduleDate) {
@@ -269,18 +266,6 @@ export default function Tool() {
         });
         const data = await res.json();
         if (!data.id) throw new Error(data.error?.message || 'Post failed');
-
-        // โพสต์ URL ปลายทางเป็น comment แรก (ไม่ขัดสายตา + คลิกได้)
-        if (card.destinationUrl && !scheduleOn && !saveAsDraft && !hidePost) {
-          try {
-            const commentParams = new URLSearchParams();
-            commentParams.append('message', card.destinationUrl);
-            commentParams.append('access_token', page.access_token);
-            await fetch(`https://graph.facebook.com/v19.0/${data.id}/comments`, {
-              method: 'POST', body: commentParams,
-            });
-          } catch {}
-        }
 
         setPostStatus(prev => prev.map(s => s.page.id === page.id ? { ...s, status: 'done' } : s));
       } catch (err) {
