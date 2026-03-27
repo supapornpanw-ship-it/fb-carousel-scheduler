@@ -27,7 +27,6 @@ export default function ProxyPage({ img, title, desc, url }) {
         <meta property="og:image" content={img} />
         <meta property="og:image:width" content="1200" />
         <meta property="og:image:height" content="630" />
-        <meta property="og:url" content={url} />
         <meta property="og:type" content="website" />
       </Head>
       <div style={{

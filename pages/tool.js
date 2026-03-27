@@ -253,12 +253,14 @@ export default function Tool() {
       + `&desc=${encodeURIComponent(card.displayLinkDescription || '')}`
       + `&url=${encodeURIComponent(card.destinationUrl)}`;
 
-    // Force Facebook scrape proxy URL ก่อนโพสต์
+    // Force Facebook scrape proxy URL ก่อนโพสต์ แล้วรอให้ scrape เสร็จ
     try {
       await fetch(`https://graph.facebook.com/v19.0/?id=${encodeURIComponent(proxyUrl)}&scrape=true&access_token=${token}`, {
         method: 'POST',
       });
     } catch {}
+    // รอ 3 วินาทีให้ Facebook cache OG data จาก proxy page
+    await new Promise(r => setTimeout(r, 3000));
 
     for (let i = 0; i < selectedPages.length; i++) {
       const page = selectedPages[i];
@@ -269,17 +271,6 @@ export default function Tool() {
         const postParams = new URLSearchParams();
         postParams.append('message', primaryText);
         postParams.append('link', proxyUrl);
-
-        // เราเป็นเจ้าของ fb-carousel-scheduler.vercel.app
-        // จึงสามารถใส่ name, description, caption, picture ได้โดยไม่ติด #100 error
-        if (card.title) postParams.append('name', card.title);
-        if (card.displayLinkDescription) postParams.append('description', card.displayLinkDescription);
-        if (card.displayLink) postParams.append('caption', card.displayLink);
-
-        // ส่งรูปผ่าน image proxy ของเรา → รูปเต็มภาพ ไม่เป็น collage
-        const imgProxy = `${base}/api/img?url=${encodeURIComponent(card.imageUrl)}`;
-        postParams.append('picture', imgProxy);
-
         postParams.append('access_token', page.access_token);
 
         if (buttonType !== 'NO_BUTTON') {
