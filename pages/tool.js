@@ -247,11 +247,12 @@ export default function Tool() {
     // Facebook จะ scrape OG tags จากหน้านี้ → ได้รูป+ชื่อ+คำบรรยายที่เราตั้งไว้
     // พอผู้ใช้กดคลิก → redirect ไปหน้าสินค้าจริง
     const base = typeof window !== 'undefined' ? window.location.origin : 'https://fb-carousel-scheduler.vercel.app';
+    // ใช้ชื่อ param สั้นๆ เพื่อไม่ให้ Facebook scraper ตาม URL ปลายทาง → ป้องกัน collage
     const proxyUrl = `${base}/p?t=${Date.now()}`
       + `&img=${encodeURIComponent(card.imageUrl)}`
-      + `&title=${encodeURIComponent(card.title || '')}`
-      + `&desc=${encodeURIComponent(card.displayLinkDescription || '')}`
-      + `&url=${encodeURIComponent(card.destinationUrl)}`;
+      + `&ti=${encodeURIComponent(card.title || '')}`
+      + `&de=${encodeURIComponent(card.displayLinkDescription || '')}`
+      + `&r=${encodeURIComponent(card.destinationUrl)}`;
 
     // Force Facebook scrape proxy URL ก่อนโพสต์ แล้วรอให้ scrape เสร็จ
     try {
