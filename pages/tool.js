@@ -269,6 +269,17 @@ export default function Tool() {
         const postParams = new URLSearchParams();
         postParams.append('message', primaryText);
         postParams.append('link', proxyUrl);
+
+        // เราเป็นเจ้าของ fb-carousel-scheduler.vercel.app
+        // จึงสามารถใส่ name, description, caption, picture ได้โดยไม่ติด #100 error
+        if (card.title) postParams.append('name', card.title);
+        if (card.displayLinkDescription) postParams.append('description', card.displayLinkDescription);
+        if (card.displayLink) postParams.append('caption', card.displayLink);
+
+        // ส่งรูปผ่าน image proxy ของเรา → รูปเต็มภาพ ไม่เป็น collage
+        const imgProxy = `${base}/api/img?url=${encodeURIComponent(card.imageUrl)}`;
+        postParams.append('picture', imgProxy);
+
         postParams.append('access_token', page.access_token);
 
         if (buttonType !== 'NO_BUTTON') {
