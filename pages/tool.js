@@ -51,13 +51,10 @@ export default function Tool() {
   const fileInputRef = useRef(null);
   const imageHashCache = useRef({});
 
-  // Auth
-  const [token, setToken]           = useState('');
+  // Auth via Extension only (ไม่ใช้ Facebook App / OAuth)
   const [user, setUser]             = useState(null);
-  const [sdkReady, setSdkReady]     = useState(false);
-  const [connecting, setConnecting] = useState(false);
-  // Extension (optional — ใช้สำหรับ posting bypass #100 เท่านั้น)
   const [extAvailable, setExtAvailable] = useState(false);
+  const [extLoading, setExtLoading] = useState(true);
 
   // Pages
   const [pages, setPages]             = useState([]);
@@ -102,72 +99,32 @@ export default function Tool() {
     const savedAd = localStorage.getItem('fb_ad_account_id');
     if (savedAd) setAdAccountId(savedAd);
 
-    // โหลด Facebook JS SDK
-    window.fbAsyncInit = function () {
-      window.FB.init({ appId: process.env.NEXT_PUBLIC_FB_APP_ID, cookie: true, xfbml: false, version: 'v19.0' });
-      setSdkReady(true);
-      const saved = sessionStorage.getItem('fb_long_token');
-      if (saved) { setToken(saved); fetchUserAndPages(saved); }
-    };
-    if (!document.getElementById('facebook-jssdk')) {
-      const s = document.createElement('script');
-      s.id = 'facebook-jssdk'; s.src = 'https://connect.facebook.net/en_US/sdk.js';
-      s.async = true; s.defer = true; document.body.appendChild(s);
-    } else {
-      setSdkReady(true);
-      const saved = sessionStorage.getItem('fb_long_token');
-      if (saved) { setToken(saved); fetchUserAndPages(saved); }
-    }
-
-    // ตรวจ extension แบบ silent (ไม่ block UI)
-    setTimeout(async () => {
-      try {
-        await sendExtensionMessage({ type: 'PREPARE_COOKIES' });
-        setExtAvailable(true);
-      } catch {}
-    }, 1000);
+    setTimeout(() => loadFromExtension(), 800);
   }, []);
 
-  const fetchUserAndPages = async (t) => {
+  const loadFromExtension = async () => {
+    setExtLoading(true);
     try {
-      const [uRes, pRes] = await Promise.all([
-        fetch(`https://graph.facebook.com/v19.0/me?fields=id,name,picture.type(large)&access_token=${t}`),
-        fetch(`https://graph.facebook.com/v19.0/me/accounts?fields=id,name,picture,access_token&limit=100&access_token=${t}`),
-      ]);
-      const uData = await uRes.json();
-      const pData = await pRes.json();
-      if (uData.id) setUser(uData);
-      if (pData.data) setPages(pData.data);
-    } catch (err) { console.error('fetch error', err); }
-  };
+      await sendExtensionMessage({ type: 'PREPARE_COOKIES' });
+      setExtAvailable(true);
 
-  const handleConnect = () => {
-    if (!sdkReady || !window.FB) return;
-    setConnecting(true);
-    window.FB.login(async (response) => {
-      if (response.authResponse) {
-        const shortToken = response.authResponse.accessToken;
-        try {
-          const res = await fetch('/api/exchange-token', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ shortToken }),
-          });
-          const data = await res.json();
-          const longToken = data.access_token || shortToken;
-          sessionStorage.setItem('fb_long_token', longToken);
-          setToken(longToken); await fetchUserAndPages(longToken);
-        } catch {
-          sessionStorage.setItem('fb_long_token', shortToken);
-          setToken(shortToken); await fetchUserAndPages(shortToken);
-        }
-      }
-      setConnecting(false);
-    }, { scope: 'pages_show_list,pages_read_engagement,pages_manage_posts,pages_read_user_content' });
+      const [uData, pData] = await Promise.all([
+        sendExtensionMessage({ type: 'FB_API', url: 'https://graph.facebook.com/v19.0/me?fields=id,name,picture.type(large)' }),
+        sendExtensionMessage({ type: 'FB_API', url: 'https://graph.facebook.com/v19.0/me/accounts?fields=id,name,picture,access_token&limit=100' }),
+      ]);
+
+      if (uData?.id) setUser(uData);
+      if (pData?.data) setPages(pData.data);
+    } catch (err) {
+      console.error('Extension error:', err);
+    } finally {
+      setExtLoading(false);
+    }
   };
 
   const handleLogout = () => {
-    sessionStorage.removeItem('fb_long_token');
-    setToken(''); setUser(null); setPages([]); setSelected([]);
+    setUser(null); setPages([]); setSelected([]);
+    loadFromExtension();
   };
 
   // ─── Page Selection ───────────────────────────────────────────────
@@ -503,16 +460,17 @@ export default function Tool() {
                     </svg>
                   </div>
                 </div>
+              ) : extLoading ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <svg width="14" height="14" fill="none" viewBox="0 0 24 24" style={{ animation: 'spin 1s linear infinite' }}>
+                    <circle cx="12" cy="12" r="10" stroke="#2dd4bf" strokeWidth="4" style={{ opacity: 0.25 }}/>
+                    <path fill="#2dd4bf" d="M4 12a8 8 0 018-8v8H4z"/>
+                  </svg>
+                  <span style={{ fontSize: 12, color: '#94a3b8' }}>กำลังโหลด...</span>
+                </div>
               ) : (
-                <button
-                  onClick={handleConnect}
-                  disabled={connecting || !sdkReady}
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: '#1877F2', color: 'white', fontWeight: 600, fontSize: 12, padding: '9px 12px', borderRadius: 8, border: 'none', cursor: connecting || !sdkReady ? 'not-allowed' : 'pointer', opacity: connecting || !sdkReady ? 0.6 : 1 }}
-                >
-                  {connecting
-                    ? <><svg width="13" height="13" fill="none" viewBox="0 0 24 24" style={{ animation: 'spin 1s linear infinite' }}><circle cx="12" cy="12" r="10" stroke="white" strokeWidth="4" style={{ opacity: 0.3 }}/><path fill="white" d="M4 12a8 8 0 018-8v8H4z"/></svg> กำลังเชื่อมต่อ...</>
-                    : <><svg width="13" height="13" fill="white" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg> เชื่อมต่อ Facebook</>
-                  }
+                <button onClick={loadFromExtension} style={{ width: '100%', background: '#0d9488', color: 'white', border: 'none', borderRadius: 8, padding: '8px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                  Retry เชื่อมต่อ
                 </button>
               )}
             </div>
