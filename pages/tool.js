@@ -51,11 +51,13 @@ export default function Tool() {
   const fileInputRef = useRef(null);
   const imageHashCache = useRef({});
 
-  // Auth via Extension (ไม่ใช้ OAuth แล้ว)
+  // Auth
+  const [token, setToken]           = useState('');
   const [user, setUser]             = useState(null);
+  const [sdkReady, setSdkReady]     = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  // Extension (optional — ใช้สำหรับ posting bypass #100 เท่านั้น)
   const [extAvailable, setExtAvailable] = useState(false);
-  const [extLoading, setExtLoading] = useState(true);  // กำลังเชื่อมต่อ extension
-  const [extError, setExtError]     = useState(false); // extension ไม่พร้อม
 
   // Pages
   const [pages, setPages]             = useState([]);
@@ -100,39 +102,72 @@ export default function Tool() {
     const savedAd = localStorage.getItem('fb_ad_account_id');
     if (savedAd) setAdAccountId(savedAd);
 
-    // รอให้ content script inject เสร็จก่อน แล้วค่อย connect
-    const t = setTimeout(() => initFromExtension(), 800);
-    return () => clearTimeout(t);
+    // โหลด Facebook JS SDK
+    window.fbAsyncInit = function () {
+      window.FB.init({ appId: process.env.NEXT_PUBLIC_FB_APP_ID, cookie: true, xfbml: false, version: 'v19.0' });
+      setSdkReady(true);
+      const saved = sessionStorage.getItem('fb_long_token');
+      if (saved) { setToken(saved); fetchUserAndPages(saved); }
+    };
+    if (!document.getElementById('facebook-jssdk')) {
+      const s = document.createElement('script');
+      s.id = 'facebook-jssdk'; s.src = 'https://connect.facebook.net/en_US/sdk.js';
+      s.async = true; s.defer = true; document.body.appendChild(s);
+    } else {
+      setSdkReady(true);
+      const saved = sessionStorage.getItem('fb_long_token');
+      if (saved) { setToken(saved); fetchUserAndPages(saved); }
+    }
+
+    // ตรวจ extension แบบ silent (ไม่ block UI)
+    setTimeout(async () => {
+      try {
+        await sendExtensionMessage({ type: 'PREPARE_COOKIES' });
+        setExtAvailable(true);
+      } catch {}
+    }, 1000);
   }, []);
 
-  // เชื่อมต่อผ่าน Extension — ไม่ต้องใช้ Facebook OAuth เลย
-  // Extension inject session cookie → API ทำงานเหมือนล็อกอิน Meta Business Suite
-  const initFromExtension = async () => {
-    setExtLoading(true);
-    setExtError(false);
+  const fetchUserAndPages = async (t) => {
     try {
-      await sendExtensionMessage({ type: 'PREPARE_COOKIES' });
-      setExtAvailable(true);
-
-      const [uData, pData] = await Promise.all([
-        sendExtensionMessage({ type: 'FB_API', url: 'https://graph.facebook.com/v19.0/me?fields=id,name,picture.type(large)' }),
-        sendExtensionMessage({ type: 'FB_API', url: 'https://graph.facebook.com/v19.0/me/accounts?fields=id,name,picture,access_token&limit=100' }),
+      const [uRes, pRes] = await Promise.all([
+        fetch(`https://graph.facebook.com/v19.0/me?fields=id,name,picture.type(large)&access_token=${t}`),
+        fetch(`https://graph.facebook.com/v19.0/me/accounts?fields=id,name,picture,access_token&limit=100&access_token=${t}`),
       ]);
+      const uData = await uRes.json();
+      const pData = await pRes.json();
+      if (uData.id) setUser(uData);
+      if (pData.data) setPages(pData.data);
+    } catch (err) { console.error('fetch error', err); }
+  };
 
-      if (uData?.id) setUser(uData);
-      if (pData?.data) setPages(pData.data);
-      else if (pData?.error) throw new Error(pData.error.message);
-    } catch (err) {
-      console.error('Extension error:', err);
-      setExtError(true);
-    } finally {
-      setExtLoading(false);
-    }
+  const handleConnect = () => {
+    if (!sdkReady || !window.FB) return;
+    setConnecting(true);
+    window.FB.login(async (response) => {
+      if (response.authResponse) {
+        const shortToken = response.authResponse.accessToken;
+        try {
+          const res = await fetch('/api/exchange-token', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ shortToken }),
+          });
+          const data = await res.json();
+          const longToken = data.access_token || shortToken;
+          sessionStorage.setItem('fb_long_token', longToken);
+          setToken(longToken); await fetchUserAndPages(longToken);
+        } catch {
+          sessionStorage.setItem('fb_long_token', shortToken);
+          setToken(shortToken); await fetchUserAndPages(shortToken);
+        }
+      }
+      setConnecting(false);
+    }, { scope: 'pages_show_list,pages_read_engagement,pages_manage_posts,pages_read_user_content' });
   };
 
   const handleLogout = () => {
-    setUser(null); setPages([]); setSelected([]);
-    initFromExtension();
+    sessionStorage.removeItem('fb_long_token');
+    setToken(''); setUser(null); setPages([]); setSelected([]);
   };
 
   // ─── Page Selection ───────────────────────────────────────────────
@@ -468,22 +503,18 @@ export default function Tool() {
                     </svg>
                   </div>
                 </div>
-              ) : extLoading ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
-                  <svg width="14" height="14" fill="none" viewBox="0 0 24 24" style={{ animation: 'spin 1s linear infinite', flexShrink: 0 }}>
-                    <circle cx="12" cy="12" r="10" stroke="#2dd4bf" strokeWidth="4" style={{ opacity: 0.25 }}/>
-                    <path fill="#2dd4bf" d="M4 12a8 8 0 018-8v8H4z"/>
-                  </svg>
-                  <span style={{ fontSize: 12, color: '#94a3b8' }}>กำลังเชื่อมต่อ...</span>
-                </div>
-              ) : extError ? (
-                <div>
-                  <p style={{ fontSize: 11, color: '#f87171', marginBottom: 8, lineHeight: 1.5 }}>ไม่พบ Extension — ล็อกอิน Facebook ใน Chrome ไว้ก่อน แล้วกด Retry</p>
-                  <button onClick={initFromExtension} style={{ width: '100%', background: '#0d9488', color: 'white', border: 'none', borderRadius: 8, padding: '7px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                    Retry
-                  </button>
-                </div>
-              ) : null}
+              ) : (
+                <button
+                  onClick={handleConnect}
+                  disabled={connecting || !sdkReady}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: '#1877F2', color: 'white', fontWeight: 600, fontSize: 12, padding: '9px 12px', borderRadius: 8, border: 'none', cursor: connecting || !sdkReady ? 'not-allowed' : 'pointer', opacity: connecting || !sdkReady ? 0.6 : 1 }}
+                >
+                  {connecting
+                    ? <><svg width="13" height="13" fill="none" viewBox="0 0 24 24" style={{ animation: 'spin 1s linear infinite' }}><circle cx="12" cy="12" r="10" stroke="white" strokeWidth="4" style={{ opacity: 0.3 }}/><path fill="white" d="M4 12a8 8 0 018-8v8H4z"/></svg> กำลังเชื่อมต่อ...</>
+                    : <><svg width="13" height="13" fill="white" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg> เชื่อมต่อ Facebook</>
+                  }
+                </button>
+              )}
             </div>
 
             {/* FACEBOOK PAGES */}
