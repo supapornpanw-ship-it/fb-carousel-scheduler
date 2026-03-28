@@ -51,10 +51,15 @@ export default function Tool() {
   const fileInputRef = useRef(null);
   const imageHashCache = useRef({});
 
-  // Auth / Extension
+  // Auth
+  const [token, setToken]         = useState('');
   const [user, setUser]           = useState(null);
+  const [sdkReady, setSdkReady]   = useState(false);
+  const [connecting, setConnecting] = useState(false);
+
+  // Extension
   const [extAvailable, setExtAvailable] = useState(false);
-  const [extError, setExtError]   = useState(false); // extension ไม่ตอบสนอง
+  const [extError, setExtError]   = useState(false);
 
   // Pages
   const [pages, setPages]           = useState([]);
@@ -92,7 +97,7 @@ export default function Tool() {
 
   // ─── Init ─────────────────────────────────────────────────────────
   useEffect(() => {
-    // โหลด image library และ ad account จาก localStorage
+    // โหลด image library + ad account
     try {
       const saved = JSON.parse(localStorage.getItem('fb_image_library') || '[]');
       setImageLibrary(saved);
@@ -100,58 +105,80 @@ export default function Tool() {
     const savedAd = localStorage.getItem('fb_ad_account_id');
     if (savedAd) setAdAccountId(savedAd);
 
-    // รอ extension ready แล้วดึงข้อมูล
-    const onReady = async (event) => {
-      if (event.data?.direction === 'from-content-script' && event.data?.status === 'ready') {
-        window.removeEventListener('message', onReady);
-        await initFromExtension();
-      }
+    // โหลด Facebook JS SDK
+    window.fbAsyncInit = function () {
+      window.FB.init({ appId: process.env.NEXT_PUBLIC_FB_APP_ID, cookie: true, xfbml: false, version: 'v19.0' });
+      setSdkReady(true);
+      // ถ้ามี token เก็บไว้ → โหลด pages เลย
+      const saved = sessionStorage.getItem('fb_long_token');
+      if (saved) { setToken(saved); fetchUserAndPages(saved); }
     };
-    window.addEventListener('message', onReady);
+    if (!document.getElementById('facebook-jssdk')) {
+      const s = document.createElement('script');
+      s.id = 'facebook-jssdk';
+      s.src = 'https://connect.facebook.net/en_US/sdk.js';
+      s.async = true; s.defer = true;
+      document.body.appendChild(s);
+    } else {
+      setSdkReady(true);
+      const saved = sessionStorage.getItem('fb_long_token');
+      if (saved) { setToken(saved); fetchUserAndPages(saved); }
+    }
 
-    // ถ้า content script โหลดก่อนหน้านี้แล้ว (ไม่มี ready event) — ลองเลย
-    const tryNow = setTimeout(async () => {
-      window.removeEventListener('message', onReady);
-      await initFromExtension();
-    }, 1500);
-
-    return () => {
-      window.removeEventListener('message', onReady);
-      clearTimeout(tryNow);
-    };
+    // ตรวจ BulkPoster extension (ใช้สำหรับ posting ไม่ต้องใช้สำหรับ login)
+    const t = setTimeout(async () => {
+      try {
+        await sendExtensionMessage({ type: 'PREPARE_COOKIES' });
+        setExtAvailable(true);
+      } catch { /* extension ไม่มี — ใช้ proxy fallback แทน */ }
+    }, 800);
+    return () => clearTimeout(t);
   }, []);
 
-  // ดึง user + pages ผ่าน FeedConnector extension (ไม่ต้องใช้ OAuth token)
-  const initFromExtension = async () => {
+  // ดึง user + pages ด้วย OAuth token (เหมือนเดิม)
+  const fetchUserAndPages = async (t) => {
     try {
-      await sendExtensionMessage({ type: 'PREPARE_COOKIES' });
-      setExtAvailable(true);
-      setExtError(false);
-
-      const [uData, pData] = await Promise.all([
-        sendExtensionMessage({
-          type: 'FB_API',
-          url: 'https://graph.facebook.com/v19.0/me?fields=id,name,picture.type(large)',
-        }),
-        sendExtensionMessage({
-          type: 'FB_API',
-          url: 'https://graph.facebook.com/v19.0/me/accounts?fields=id,name,picture,access_token&limit=100',
-        }),
+      const [uRes, pRes] = await Promise.all([
+        fetch(`https://graph.facebook.com/v19.0/me?fields=id,name,picture.type(large)&access_token=${t}`),
+        fetch(`https://graph.facebook.com/v19.0/me/accounts?fields=id,name,picture,access_token&limit=100&access_token=${t}`),
       ]);
+      const uData = await uRes.json();
+      const pData = await pRes.json();
+      if (uData.id) setUser(uData);
+      if (pData.data) setPages(pData.data);
+    } catch (err) { console.error('fetch error', err); }
+  };
 
-      if (uData?.id)   setUser(uData);
-      if (pData?.data) setPages(pData.data);
-    } catch (err) {
-      console.error('Extension init failed:', err);
-      setExtError(true);
-    }
+  // กด Connect Facebook (OAuth popup)
+  const handleConnect = () => {
+    if (!sdkReady || !window.FB) return;
+    setConnecting(true);
+    window.FB.login(async (response) => {
+      if (response.authResponse) {
+        const shortToken = response.authResponse.accessToken;
+        try {
+          const res = await fetch('/api/exchange-token', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ shortToken }),
+          });
+          const data = await res.json();
+          const longToken = data.access_token || shortToken;
+          sessionStorage.setItem('fb_long_token', longToken);
+          setToken(longToken);
+          await fetchUserAndPages(longToken);
+        } catch {
+          sessionStorage.setItem('fb_long_token', shortToken);
+          setToken(shortToken);
+          await fetchUserAndPages(shortToken);
+        }
+      }
+      setConnecting(false);
+    }, { scope: 'pages_show_list,pages_read_engagement,pages_manage_posts,pages_read_user_content' });
   };
 
   const handleLogout = () => {
-    setUser(null);
-    setPages([]);
-    setSelected([]);
-    initFromExtension(); // reconnect ใหม่
+    sessionStorage.removeItem('fb_long_token');
+    setToken(''); setUser(null); setPages([]); setSelected([]);
   };
 
   // ─── Page Selection ───────────────────────────────────────────────
@@ -411,39 +438,6 @@ export default function Tool() {
   };
 
   // ─── Render ───────────────────────────────────────────────────────
-  // ถ้า extension ไม่พร้อม → แสดงหน้าให้ติดตั้ง
-  if (extError) {
-    return (
-      <>
-        <Head><title>Bulk Poster — ติดตั้ง Extension ก่อน</title></Head>
-        <div className="min-h-screen bg-gradient-to-br from-teal-50 to-cyan-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-8 text-center">
-            <div className="w-16 h-16 bg-yellow-400 rounded-2xl flex items-center justify-center mx-auto mb-5 shadow-lg shadow-yellow-100">
-              <svg className="w-9 h-9 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-              </svg>
-            </div>
-            <h1 className="text-xl font-bold text-gray-800 mb-2">ต้องติดตั้ง BulkPoster Extension ก่อน</h1>
-            <p className="text-sm text-gray-500 mb-6 leading-relaxed">
-              Extension นี้ช่วยเชื่อมต่อกับ Facebook โดยไม่ต้องล็อกอินแยก เปิด Chrome แล้วทำตามขั้นตอน
-            </p>
-            <ol className="text-left text-sm text-gray-600 space-y-3 mb-7">
-              <li className="flex gap-3"><span className="w-6 h-6 bg-teal-500 text-white rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold">1</span><span>เปิด Chrome → พิมพ์ <code className="bg-gray-100 px-1 rounded">chrome://extensions</code></span></li>
-              <li className="flex gap-3"><span className="w-6 h-6 bg-teal-500 text-white rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold">2</span><span>เปิด <strong>Developer mode</strong> มุมขวาบน</span></li>
-              <li className="flex gap-3"><span className="w-6 h-6 bg-teal-500 text-white rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold">3</span><span>กด <strong>Load unpacked</strong> → เลือก folder extension ที่ได้รับมา</span></li>
-              <li className="flex gap-3"><span className="w-6 h-6 bg-teal-500 text-white rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold">4</span><span>ล็อกอิน Facebook ไว้ใน Chrome แล้วกลับมาหน้านี้</span></li>
-            </ol>
-            <button
-              onClick={() => { setExtError(false); initFromExtension(); }}
-              className="w-full bg-teal-500 hover:bg-teal-600 text-white font-semibold py-3 rounded-xl transition text-sm">
-              ลองเชื่อมต่อใหม่
-            </button>
-          </div>
-        </div>
-      </>
-    );
-  }
-
   return (
     <>
       <Head>
@@ -476,13 +470,23 @@ export default function Tool() {
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center gap-2">
-                  <div className="w-9 h-9 bg-gray-100 rounded-full animate-pulse"/>
-                  <div className="flex-1">
-                    <div className="h-3 bg-gray-100 rounded animate-pulse mb-1.5"/>
-                    <div className="h-2.5 bg-gray-100 rounded animate-pulse w-2/3"/>
-                  </div>
-                </div>
+                <button
+                  onClick={handleConnect}
+                  disabled={connecting || !sdkReady}
+                  className="w-full flex items-center justify-center gap-2 bg-[#1877F2] hover:bg-[#166FE5] disabled:opacity-60 text-white font-semibold py-2 px-3 rounded-lg transition text-xs"
+                >
+                  {connecting ? (
+                    <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                    </svg>
+                  ) : (
+                    <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                    </svg>
+                  )}
+                  {connecting ? 'กำลังเชื่อมต่อ...' : 'เชื่อมต่อ Facebook'}
+                </button>
               )}
             </div>
 
