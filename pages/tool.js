@@ -16,10 +16,10 @@ const BUTTON_TYPES = [
 ];
 
 const STATUS_COLORS = {
-  pending:  { bg: 'bg-gray-100',   text: 'text-gray-500',   dot: 'bg-gray-400',   label: 'รอ' },
-  posting:  { bg: 'bg-blue-50',    text: 'text-blue-600',   dot: 'bg-blue-400 animate-pulse', label: 'กำลังโพสต์...' },
-  done:     { bg: 'bg-green-50',   text: 'text-green-600',  dot: 'bg-green-500',  label: 'Done' },
-  failed:   { bg: 'bg-red-50',     text: 'text-red-600',    dot: 'bg-red-500',    label: 'Failed' },
+  pending:  { bg: 'bg-slate-700',    text: 'text-slate-400',   dot: 'bg-slate-500',              label: 'รอ' },
+  posting:  { bg: 'bg-blue-900/40',  text: 'text-blue-400',    dot: 'bg-blue-400 animate-pulse',  label: 'กำลังโพสต์...' },
+  done:     { bg: 'bg-teal-900/40',  text: 'text-teal-400',    dot: 'bg-teal-400',               label: 'Done' },
+  failed:   { bg: 'bg-red-900/40',   text: 'text-red-400',     dot: 'bg-red-500',                label: 'Failed' },
 };
 
 // ── FeedConnector Extension Bridge ────────────────────────────────
@@ -52,30 +52,29 @@ export default function Tool() {
   const imageHashCache = useRef({});
 
   // Auth
-  const [token, setToken]         = useState('');
-  const [user, setUser]           = useState(null);
-  const [sdkReady, setSdkReady]   = useState(false);
+  const [token, setToken]           = useState('');
+  const [user, setUser]             = useState(null);
+  const [sdkReady, setSdkReady]     = useState(false);
   const [connecting, setConnecting] = useState(false);
 
   // Extension
   const [extAvailable, setExtAvailable] = useState(false);
-  const [extError, setExtError]   = useState(false);
 
   // Pages
-  const [pages, setPages]           = useState([]);
-  const [selectedPages, setSelected] = useState([]);
-  const [activeTab, setActiveTab]   = useState(null);
+  const [pages, setPages]             = useState([]);
+  const [selectedPages, setSelected]  = useState([]);
+  const [activeTab, setActiveTab]     = useState(null);
 
   // Ad Account
   const [adAccountId, setAdAccountId] = useState('');
 
   // Post settings
-  const [primaryText, setPrimary]   = useState('');
-  const [delay, setDelay]           = useState(5);
-  const [buttonType, setButtonType] = useState('LEARN_MORE');
-  const [saveAsDraft, setSaveDraft] = useState(false);
-  const [hidePost, setHide]         = useState(false);
-  const [scheduleOn, setScheduleOn] = useState(false);
+  const [primaryText, setPrimary]     = useState('');
+  const [delay, setDelay]             = useState(5);
+  const [buttonType, setButtonType]   = useState('LEARN_MORE');
+  const [saveAsDraft, setSaveDraft]   = useState(false);
+  const [hidePost, setHide]           = useState(false);
+  const [scheduleOn, setScheduleOn]   = useState(false);
   const [scheduleDate, setScheduleDate] = useState('');
 
   // Card
@@ -89,7 +88,7 @@ export default function Tool() {
 
   // Image library (stored in localStorage)
   const [imageLibrary, setImageLibrary] = useState([]);
-  const [libView, setLibView] = useState('grid'); // 'grid' | 'list'
+  const [libView, setLibView] = useState('grid');
 
   // Status
   const [postStatus, setPostStatus] = useState([]);
@@ -97,7 +96,6 @@ export default function Tool() {
 
   // ─── Init ─────────────────────────────────────────────────────────
   useEffect(() => {
-    // โหลด image library + ad account
     try {
       const saved = JSON.parse(localStorage.getItem('fb_image_library') || '[]');
       setImageLibrary(saved);
@@ -105,11 +103,9 @@ export default function Tool() {
     const savedAd = localStorage.getItem('fb_ad_account_id');
     if (savedAd) setAdAccountId(savedAd);
 
-    // โหลด Facebook JS SDK
     window.fbAsyncInit = function () {
       window.FB.init({ appId: process.env.NEXT_PUBLIC_FB_APP_ID, cookie: true, xfbml: false, version: 'v19.0' });
       setSdkReady(true);
-      // ถ้ามี token เก็บไว้ → โหลด pages เลย
       const saved = sessionStorage.getItem('fb_long_token');
       if (saved) { setToken(saved); fetchUserAndPages(saved); }
     };
@@ -125,17 +121,15 @@ export default function Tool() {
       if (saved) { setToken(saved); fetchUserAndPages(saved); }
     }
 
-    // ตรวจ BulkPoster extension (ใช้สำหรับ posting ไม่ต้องใช้สำหรับ login)
     const t = setTimeout(async () => {
       try {
         await sendExtensionMessage({ type: 'PREPARE_COOKIES' });
         setExtAvailable(true);
-      } catch { /* extension ไม่มี — ใช้ proxy fallback แทน */ }
+      } catch {}
     }, 800);
     return () => clearTimeout(t);
   }, []);
 
-  // ดึง user + pages ด้วย OAuth token (เหมือนเดิม)
   const fetchUserAndPages = async (t) => {
     try {
       const [uRes, pRes] = await Promise.all([
@@ -149,7 +143,6 @@ export default function Tool() {
     } catch (err) { console.error('fetch error', err); }
   };
 
-  // กด Connect Facebook (OAuth popup)
   const handleConnect = () => {
     if (!sdkReady || !window.FB) return;
     setConnecting(true);
@@ -206,7 +199,6 @@ export default function Tool() {
   // ─── Image Library ────────────────────────────────────────────────
   const saveLibrary = (lib) => {
     setImageLibrary(lib);
-    // เก็บเฉพาะ URL จริง (ไม่เก็บ base64 เพราะ localStorage มีขนาดจำกัด)
     try {
       const urlOnly = lib.filter(i => !i.url.startsWith('data:'));
       localStorage.setItem('fb_image_library', JSON.stringify(urlOnly));
@@ -234,20 +226,17 @@ export default function Tool() {
       const tempId = Date.now() + Math.random();
       const previewUrl = URL.createObjectURL(file);
 
-      // แสดงรูป preview พร้อม loading ก่อน
       setImageLibrary(prev => [
         { id: tempId, url: previewUrl, name: file.name, loading: true },
         ...prev
       ]);
 
       if (!pageToken || !pageId) {
-        // ยังไม่มี page token — เก็บแค่ preview ไว้ก่อน
         setImageLibrary(prev => prev.map(i => i.id === tempId ? { ...i, loading: false } : i));
         continue;
       }
 
       try {
-        // อัปโหลดรูปขึ้น Facebook (unpublished)
         const formData = new FormData();
         formData.append('source', file);
         formData.append('published', 'false');
@@ -260,7 +249,6 @@ export default function Tool() {
         const uploadData = await uploadRes.json();
 
         if (uploadData.id) {
-          // ดึง URL จริงจาก Facebook
           const infoRes = await fetch(
             `https://graph.facebook.com/v19.0/${uploadData.id}?fields=images&access_token=${pageToken}`
           );
@@ -286,7 +274,6 @@ export default function Tool() {
         }
       } catch (err) {
         console.error('Upload error:', err);
-        // ถ้า error ให้แสดง preview ไว้ก่อน
         setImageLibrary(prev => prev.map(i =>
           i.id === tempId ? { ...i, loading: false, uploadError: true } : i
         ));
@@ -299,10 +286,6 @@ export default function Tool() {
   };
 
   // ─── Post / Schedule ──────────────────────────────────────────────
-  // One Card Link: รูปเต็ม + link card ใต้รูป (domain + ชื่อ + ปุ่ม CTA)
-  // วิธี 1 (ดีกว่า): ใช้ FeedConnector extension → inject cookies + business origin
-  //   → โพสต์ picture/name/description custom ได้โดยตรง ไม่ติด #100
-  // วิธี 2 (fallback): ใช้ proxy page /p → Facebook scrape OG ของเรา
   const handlePost = async () => {
     if (selectedPages.length === 0) return alert('กรุณาเลือก Page อย่างน้อย 1 หน้า');
     if (!card.imageUrl) return alert('กรุณาเลือกหรือกรอก URL รูปภาพ');
@@ -348,13 +331,13 @@ export default function Tool() {
         if (useExtension) {
           // ── วิธี 1: Extension cookie approach ───────────────────
           // Facebook เห็น Origin: business.facebook.com → อนุญาต custom picture/name
+          // ไม่ใส่ access_token เพราะ extension ใช้ session cookie แทน
           const feedParams = new URLSearchParams();
           feedParams.append('message', primaryText || '');
           feedParams.append('link', card.destinationUrl);
           feedParams.append('picture', card.imageUrl);
           if (card.title) feedParams.append('name', card.title);
           if (card.displayLinkDescription) feedParams.append('description', card.displayLinkDescription);
-          feedParams.append('access_token', page.access_token);
 
           if (buttonType && buttonType !== 'NO_BUTTON') {
             feedParams.append('call_to_action', JSON.stringify({
@@ -444,27 +427,82 @@ export default function Tool() {
         <title>Bulk Poster</title>
       </Head>
 
-      <div className="flex h-screen overflow-hidden bg-gray-50">
-        {/* ══════ LEFT PANEL ══════ */}
-        <aside className="w-72 flex-shrink-0 bg-white border-r border-gray-100 flex flex-col overflow-hidden shadow-sm">
-          <div className="flex-1 overflow-y-auto p-3 space-y-3">
+      <style>{`
+        body { background: #0f172a; }
+        .dark-input {
+          width: 100%;
+          background: #0f172a;
+          border: 1px solid #334155;
+          border-radius: 8px;
+          padding: 7px 10px;
+          color: #e2e8f0;
+          font-size: 13px;
+          outline: none;
+          transition: border-color 0.15s;
+        }
+        .dark-input::placeholder { color: #475569; }
+        .dark-input:focus { border-color: #2dd4bf; }
+        .dark-section {
+          background: #1e293b;
+          border: 1px solid #334155;
+          border-radius: 12px;
+          padding: 14px;
+        }
+        .dark-label {
+          font-size: 11px;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          color: #64748b;
+          margin-bottom: 8px;
+        }
+        .toggle-btn {
+          position: relative;
+          display: inline-flex;
+          align-items: center;
+          width: 40px;
+          height: 22px;
+          border-radius: 9999px;
+          transition: background-color 0.2s;
+          border: none;
+          cursor: pointer;
+          flex-shrink: 0;
+        }
+        .toggle-knob {
+          position: absolute;
+          top: 3px;
+          left: 3px;
+          width: 16px;
+          height: 16px;
+          background: white;
+          border-radius: 9999px;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+          transition: transform 0.2s;
+        }
+      `}</style>
+
+      <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: '#0f172a', color: '#e2e8f0', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+
+        {/* ══════ LEFT PANEL (fixed, w-64) ══════ */}
+        <aside style={{ width: 256, flexShrink: 0, background: '#1e293b', borderRight: '1px solid #334155', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
 
             {/* ACCOUNT */}
-            <div className="section-card">
-              <p className="label">Account</p>
+            <div className="dark-section">
+              <p className="dark-label">Account</p>
               {user ? (
-                <div className="flex items-center gap-2.5">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <img
                     src={user.picture?.data?.url || `https://graph.facebook.com/${user.id}/picture?type=square`}
-                    className="w-9 h-9 rounded-full object-cover border-2 border-teal-200"
+                    style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', border: '2px solid #2dd4bf', flexShrink: 0 }}
                     alt=""
                   />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-800 truncate">{user.name}</p>
-                    <p className="text-xs text-gray-400 truncate">{user.id}</p>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: '#f1f5f9', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>{user.name}</p>
+                    <p style={{ fontSize: 11, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>{user.id}</p>
                   </div>
-                  <div className="w-5 h-5 bg-green-400 rounded-full flex items-center justify-center flex-shrink-0">
-                    <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div style={{ width: 20, height: 20, background: '#2dd4bf', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width="11" height="11" fill="none" stroke="white" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7"/>
                     </svg>
                   </div>
@@ -473,15 +511,15 @@ export default function Tool() {
                 <button
                   onClick={handleConnect}
                   disabled={connecting || !sdkReady}
-                  className="w-full flex items-center justify-center gap-2 bg-[#1877F2] hover:bg-[#166FE5] disabled:opacity-60 text-white font-semibold py-2 px-3 rounded-lg transition text-xs"
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: '#1877F2', color: 'white', fontWeight: 600, fontSize: 12, padding: '8px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', opacity: (connecting || !sdkReady) ? 0.6 : 1, transition: 'opacity 0.15s' }}
                 >
                   {connecting ? (
-                    <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" style={{ animation: 'spin 1s linear infinite' }}>
+                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" style={{ opacity: 0.25 }}/>
+                      <path fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" style={{ opacity: 0.75 }}/>
                     </svg>
                   ) : (
-                    <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                    <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
                     </svg>
                   )}
@@ -491,36 +529,36 @@ export default function Tool() {
             </div>
 
             {/* FACEBOOK PAGES */}
-            <div className="section-card">
-              <div className="flex items-center justify-between mb-2">
-                <p className="label mb-0">Facebook Pages</p>
-                <div className="flex gap-1.5">
-                  <button onClick={selectAllPages} className="text-xs text-teal-600 hover:text-teal-700 font-medium">ทั้งหมด</button>
-                  <span className="text-gray-300">|</span>
-                  <button onClick={clearAllPages} className="text-xs text-gray-400 hover:text-gray-600">ล้าง</button>
+            <div className="dark-section">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <p className="dark-label" style={{ margin: 0 }}>Facebook Pages</p>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={selectAllPages} style={{ fontSize: 11, color: '#2dd4bf', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, padding: 0 }}>เลือกทั้งหมด</button>
+                  <span style={{ color: '#334155' }}>|</span>
+                  <button onClick={clearAllPages} style={{ fontSize: 11, color: '#64748b', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>ยกเลิกทั้งหมด</button>
                 </div>
               </div>
 
               {pages.length === 0 ? (
-                <p className="text-xs text-gray-400 text-center py-3">ไม่พบ Page...</p>
+                <p style={{ fontSize: 12, color: '#475569', textAlign: 'center', padding: '12px 0', margin: 0 }}>ไม่พบ Page...</p>
               ) : (
-                <div className="space-y-1.5 max-h-44 overflow-y-auto">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 176, overflowY: 'auto' }}>
                   {pages.map(page => {
                     const checked = !!selectedPages.find(p => p.id === page.id);
                     return (
-                      <label key={page.id} className="flex items-center gap-2.5 cursor-pointer group p-1.5 rounded-lg hover:bg-gray-50 transition">
+                      <label key={page.id} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '6px 8px', borderRadius: 8, background: checked ? 'rgba(45,212,191,0.08)' : 'transparent', transition: 'background 0.15s' }}>
                         <input
                           type="checkbox"
                           checked={checked}
                           onChange={() => togglePage(page)}
-                          className="w-4 h-4 rounded accent-teal-500 flex-shrink-0"
+                          style={{ width: 14, height: 14, flexShrink: 0, accentColor: '#2dd4bf', cursor: 'pointer' }}
                         />
                         <img
                           src={page.picture?.data?.url || `https://graph.facebook.com/${page.id}/picture?type=square`}
-                          className="w-7 h-7 rounded-lg object-cover flex-shrink-0"
+                          style={{ width: 26, height: 26, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }}
                           alt=""
                         />
-                        <span className="text-sm text-gray-700 truncate">{page.name}</span>
+                        <span style={{ fontSize: 12, color: checked ? '#e2e8f0' : '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{page.name}</span>
                       </label>
                     );
                   })}
@@ -528,120 +566,74 @@ export default function Tool() {
               )}
             </div>
 
-            {/* AD ACCOUNT */}
-            <div className="section-card">
-              <p className="label">Ad Account</p>
-              <input
-                type="text"
-                value={adAccountId}
-                onChange={e => {
-                  setAdAccountId(e.target.value);
-                  localStorage.setItem('fb_ad_account_id', e.target.value);
-                }}
-                placeholder="เช่น 703427483646694"
-                className="input text-sm"
-              />
-              <p className="text-xs text-gray-400 mt-1">ดูได้ที่ Facebook Ads Manager → แถบบน</p>
-            </div>
-
             {/* SETTINGS */}
-            <div className="section-card">
-              <p className="label">Settings</p>
+            <div className="dark-section">
+              <p className="dark-label">Settings</p>
 
-              <div className="mb-3">
-                <p className="text-xs font-medium text-gray-600 mb-1">Primary Text</p>
-                <textarea
-                  value={primaryText}
-                  onChange={e => setPrimary(e.target.value)}
-                  rows={4}
-                  placeholder="ข้อความโพสต์..."
-                  className="input resize-none text-sm"
-                />
-              </div>
-
-              <div className="mb-3">
-                <p className="text-xs font-medium text-gray-600 mb-1">Delay between pages (sec)</p>
+              <div style={{ marginBottom: 10 }}>
+                <p style={{ fontSize: 11, fontWeight: 500, color: '#94a3b8', marginBottom: 4, marginTop: 0 }}>Delay between pages (sec)</p>
                 <input
                   type="number"
                   value={delay}
                   onChange={e => setDelay(Math.max(0, parseInt(e.target.value) || 0))}
                   min={0}
-                  className="input"
+                  className="dark-input"
                 />
               </div>
 
-              <div>
-                <p className="text-xs font-medium text-gray-600 mb-1">Card Button</p>
-                <div className="relative">
+              <div style={{ marginBottom: 10 }}>
+                <p style={{ fontSize: 11, fontWeight: 500, color: '#94a3b8', marginBottom: 4, marginTop: 0 }}>Card Button</p>
+                <div style={{ position: 'relative' }}>
                   <select
                     value={buttonType}
                     onChange={e => setButtonType(e.target.value)}
-                    className="input appearance-none pr-8"
+                    className="dark-input"
+                    style={{ appearance: 'none', paddingRight: 28, cursor: 'pointer' }}
                   >
                     {BUTTON_TYPES.map(b => (
                       <option key={b.value} value={b.value}>{b.label}</option>
                     ))}
                   </select>
-                  <div className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div style={{ pointerEvents: 'none', position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: '#64748b' }}>
+                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/>
                     </svg>
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* OPTIONS */}
-            <div className="section-card">
-              <div className="space-y-2">
-                <label className="flex items-center gap-2.5 cursor-pointer">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input type="checkbox" checked={saveAsDraft} onChange={e => setSaveDraft(e.target.checked)}
-                    className="w-4 h-4 rounded accent-teal-500"/>
-                  <span className="text-sm text-gray-700">Save as Draft</span>
+                    style={{ width: 14, height: 14, accentColor: '#2dd4bf', cursor: 'pointer' }}/>
+                  <span style={{ fontSize: 12, color: '#94a3b8' }}>Save as Draft</span>
                 </label>
-                <label className="flex items-center gap-2.5 cursor-pointer">
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input type="checkbox" checked={hidePost} onChange={e => setHide(e.target.checked)}
-                    className="w-4 h-4 rounded accent-teal-500"/>
-                  <span className="text-sm text-gray-700">Hide Post</span>
+                    style={{ width: 14, height: 14, accentColor: '#2dd4bf', cursor: 'pointer' }}/>
+                  <span style={{ fontSize: 12, color: '#94a3b8' }}>Hide Post</span>
                 </label>
-              </div>
-
-              {/* SCHEDULE */}
-              <div className="mt-3 pt-3 border-t border-gray-100">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-medium text-gray-700">Schedule</p>
-                  <button
-                    onClick={() => handleScheduleToggle(!scheduleOn)}
-                    className={`relative w-11 h-6 rounded-full transition-colors ${scheduleOn ? 'bg-teal-500' : 'bg-gray-200'}`}
-                  >
-                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${scheduleOn ? 'translate-x-5' : ''}`}/>
-                  </button>
-                </div>
-                {scheduleOn && (
-                  <input
-                    type="datetime-local"
-                    value={scheduleDate}
-                    onChange={e => setScheduleDate(e.target.value)}
-                    className="input text-sm"
-                  />
-                )}
               </div>
             </div>
+
           </div>
 
           {/* Extension Status */}
-          <div className={`mx-3 mb-2 px-3 py-2 rounded-lg text-xs flex items-center gap-2 ${extAvailable ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'}`}>
-            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${extAvailable ? 'bg-green-500' : 'bg-yellow-400 animate-pulse'}`}/>
-            {extAvailable
-              ? 'FeedConnector พร้อม — โพสต์แบบ One Card Link ได้เต็มรูปแบบ'
-              : 'ยังไม่มี FeedConnector extension — ใช้ proxy mode แทน'}
+          <div style={{ margin: '0 12px 8px', padding: '8px 12px', borderRadius: 8, fontSize: 11, display: 'flex', alignItems: 'center', gap: 8, background: extAvailable ? 'rgba(20,184,166,0.12)' : 'rgba(234,179,8,0.10)', color: extAvailable ? '#2dd4bf' : '#fbbf24' }}>
+            <div style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: extAvailable ? '#2dd4bf' : '#fbbf24', animation: extAvailable ? 'none' : 'pulse 1.5s infinite' }}/>
+            <span style={{ lineHeight: 1.4 }}>
+              {extAvailable ? 'FeedConnector พร้อม' : 'ไม่พบ FeedConnector — ใช้ proxy mode'}
+            </span>
           </div>
 
           {/* Logout */}
-          <div className="p-3 border-t border-gray-100">
+          <div style={{ padding: '10px 12px', borderTop: '1px solid #334155' }}>
             <button onClick={handleLogout}
-              className="w-full flex items-center justify-center gap-2 text-sm text-gray-500 hover:text-red-500 py-2 hover:bg-red-50 rounded-lg transition">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 12, color: '#64748b', background: 'none', border: 'none', cursor: 'pointer', padding: '7px', borderRadius: 8, transition: 'color 0.15s, background 0.15s' }}
+              onMouseEnter={e => { e.currentTarget.style.color = '#f87171'; e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; }}
+              onMouseLeave={e => { e.currentTarget.style.color = '#64748b'; e.currentTarget.style.background = 'none'; }}
+            >
+              <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                   d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
               </svg>
@@ -651,49 +643,83 @@ export default function Tool() {
         </aside>
 
         {/* ══════ MAIN CONTENT ══════ */}
-        <main className="flex-1 flex flex-col overflow-hidden">
+        <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-          {/* Top Bar: Page Tabs + Post Button */}
-          <div className="bg-white border-b border-gray-100 px-4 py-2.5 flex items-center gap-2 overflow-x-auto shadow-sm flex-shrink-0">
-            <div className="flex items-center gap-2 flex-1 overflow-x-auto">
+          {/* Top Bar */}
+          <div style={{ background: '#1e293b', borderBottom: '1px solid #334155', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+            {/* Title */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginRight: 8 }}>
+              <span style={{ fontSize: 15, fontWeight: 700, color: '#f1f5f9', letterSpacing: '-0.01em' }}>Bulk Poster</span>
+              <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 9999, background: extAvailable ? 'rgba(45,212,191,0.15)' : 'rgba(251,191,36,0.12)', color: extAvailable ? '#2dd4bf' : '#fbbf24', border: `1px solid ${extAvailable ? 'rgba(45,212,191,0.3)' : 'rgba(251,191,36,0.25)'}` }}>
+                {extAvailable ? 'Extension ON' : 'Proxy Mode'}
+              </span>
+            </div>
+
+            {/* Page tabs */}
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6, overflowX: 'auto', minWidth: 0 }}>
               {selectedPages.length === 0 ? (
-                <p className="text-sm text-gray-400 italic">เลือก Page จากซ้ายมือ...</p>
+                <p style={{ fontSize: 12, color: '#475569', fontStyle: 'italic', margin: 0, whiteSpace: 'nowrap' }}>เลือก Page จากแผงซ้าย...</p>
               ) : (
                 selectedPages.map(page => (
                   <button
                     key={page.id}
                     onClick={() => setActiveTab(page.id)}
-                    className={`page-tab flex-shrink-0 ${activeTab === page.id ? 'page-tab-active' : 'page-tab-inactive'}`}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 8, border: `1px solid ${activeTab === page.id ? '#2dd4bf' : '#334155'}`, background: activeTab === page.id ? 'rgba(45,212,191,0.12)' : 'transparent', color: activeTab === page.id ? '#2dd4bf' : '#94a3b8', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, transition: 'all 0.15s' }}
                   >
                     <img
                       src={page.picture?.data?.url || `https://graph.facebook.com/${page.id}/picture?type=square`}
-                      className="w-5 h-5 rounded-full object-cover flex-shrink-0"
+                      style={{ width: 18, height: 18, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
                       alt=""
                     />
-                    <span className="max-w-[100px] truncate">{page.name}</span>
+                    <span style={{ maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis' }}>{page.name}</span>
                   </button>
                 ))
               )}
             </div>
 
+            {/* Schedule toggle */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+              <span style={{ fontSize: 12, color: '#94a3b8', whiteSpace: 'nowrap' }}>Schedule</span>
+              <button
+                className="toggle-btn"
+                onClick={() => handleScheduleToggle(!scheduleOn)}
+                style={{ background: scheduleOn ? '#0d9488' : '#334155' }}
+              >
+                <span className="toggle-knob" style={{ transform: scheduleOn ? 'translateX(18px)' : 'translateX(0)' }}/>
+              </button>
+              {scheduleOn && (
+                <input
+                  type="datetime-local"
+                  value={scheduleDate}
+                  onChange={e => setScheduleDate(e.target.value)}
+                  className="dark-input"
+                  style={{ width: 180, fontSize: 12 }}
+                />
+              )}
+            </div>
+
+            {/* Post Now button */}
             <button
               onClick={handlePost}
               disabled={isPosting || selectedPages.length === 0}
-              className="btn-primary flex-shrink-0 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 18px', background: (isPosting || selectedPages.length === 0) ? '#1e3a3a' : '#0d9488', color: (isPosting || selectedPages.length === 0) ? '#2dd4bf60' : 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: (isPosting || selectedPages.length === 0) ? 'not-allowed' : 'pointer', flexShrink: 0, transition: 'background 0.15s' }}
             >
               {isPosting ? (
                 <>
-                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                  <svg width="15" height="15" fill="none" viewBox="0 0 24 24" style={{ animation: 'spin 1s linear infinite' }}>
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" style={{ opacity: 0.25 }}/>
+                    <path fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" style={{ opacity: 0.75 }}/>
                   </svg>
                   กำลังโพสต์...
                 </>
               ) : (
                 <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                  <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    {scheduleOn ? (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    ) : (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                    )}
                   </svg>
                   {scheduleOn ? 'Schedule' : 'Post Now'}
                 </>
@@ -701,184 +727,158 @@ export default function Tool() {
             </button>
           </div>
 
-          {/* Scrollable Content */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {/* Scrollable Right Content */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
 
-            {/* ── CARD PREVIEW ── */}
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-              <p className="label mb-3">Card Preview</p>
-              <div className="max-w-sm mx-auto border-2 border-teal-400 rounded-xl overflow-hidden shadow-md">
-                {/* Preview Image */}
-                <div className="relative bg-gray-100 aspect-video flex items-center justify-center overflow-hidden">
-                  {card.imageUrl ? (
-                    <img
-                      src={card.imageUrl}
-                      alt="card preview"
-                      className="w-full h-full object-cover"
-                      onError={e => { e.target.style.display='none'; }}
-                    />
-                  ) : (
-                    <div className="flex flex-col items-center gap-2 text-gray-300">
-                      <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                          d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                      </svg>
-                      <p className="text-xs">เลือกรูปจาก Image Library</p>
-                    </div>
-                  )}
-                  <div className="absolute top-2 left-2 bg-teal-500 text-white text-xs px-2 py-0.5 rounded-full font-medium">
-                    Selected
-                  </div>
-                </div>
-                {/* Card Bottom */}
-                <div className="bg-gray-50 px-3 py-2 flex items-center justify-between border-t border-gray-200">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs text-gray-500 uppercase font-medium truncate">
-                      {card.displayLink || 'www.example.com'}
-                    </p>
-                    <p className="text-sm font-semibold text-gray-800 truncate">
-                      {card.title || 'Card Title'}
-                    </p>
-                  </div>
-                  {buttonType !== 'NO_BUTTON' && (
-                    <button className="ml-2 flex-shrink-0 bg-white border border-gray-300 text-gray-700 text-xs font-semibold px-3 py-1.5 rounded-md hover:bg-gray-50 transition">
-                      {BUTTON_TYPES.find(b => b.value === buttonType)?.label || 'Learn More'}
-                    </button>
-                  )}
-                </div>
-              </div>
+            {/* ── POST MESSAGE ── */}
+            <div className="dark-section">
+              <p className="dark-label">Post Message</p>
+              <textarea
+                value={primaryText}
+                onChange={e => setPrimary(e.target.value)}
+                rows={4}
+                placeholder="ข้อความโพสต์..."
+                className="dark-input"
+                style={{ resize: 'vertical', lineHeight: 1.6 }}
+              />
             </div>
 
             {/* ── CARD DETAILS ── */}
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-              <p className="label mb-3">Card Details</p>
-              <div className="space-y-3">
+            <div className="dark-section">
+              <p className="dark-label">Card Details</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <div>
-                  <p className="text-xs font-medium text-gray-600 mb-1">Card Title</p>
-                  <input type="text" value={card.title}
-                    onChange={e => setCard(c => ({...c, title: e.target.value}))}
-                    placeholder="หัวข้อการ์ด..." className="input"/>
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-gray-600 mb-1">Destination URL</p>
+                  <p style={{ fontSize: 11, fontWeight: 500, color: '#94a3b8', marginBottom: 4, marginTop: 0 }}>Destination URL</p>
                   <input type="url" value={card.destinationUrl}
                     onChange={e => setCard(c => ({...c, destinationUrl: e.target.value}))}
-                    placeholder="https://..." className="input"/>
+                    placeholder="https://..." className="dark-input"/>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p style={{ fontSize: 11, fontWeight: 500, color: '#94a3b8', marginBottom: 4, marginTop: 0 }}>Card Title</p>
+                  <input type="text" value={card.title}
+                    onChange={e => setCard(c => ({...c, title: e.target.value}))}
+                    placeholder="หัวข้อการ์ด..." className="dark-input"/>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                   <div>
-                    <p className="text-xs font-medium text-gray-600 mb-1">Display Link</p>
+                    <p style={{ fontSize: 11, fontWeight: 500, color: '#94a3b8', marginBottom: 4, marginTop: 0 }}>Display Link</p>
                     <input type="text" value={card.displayLink}
                       onChange={e => setCard(c => ({...c, displayLink: e.target.value}))}
-                      placeholder="www.example.com" className="input"/>
+                      placeholder="www.example.com" className="dark-input"/>
                   </div>
                   <div>
-                    <p className="text-xs font-medium text-gray-600 mb-1">Link Description</p>
+                    <p style={{ fontSize: 11, fontWeight: 500, color: '#94a3b8', marginBottom: 4, marginTop: 0 }}>CTA Description</p>
                     <input type="text" value={card.displayLinkDescription}
                       onChange={e => setCard(c => ({...c, displayLinkDescription: e.target.value}))}
-                      placeholder="คำอธิบาย..." className="input"/>
+                      placeholder="คำอธิบาย..." className="dark-input"/>
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-gray-600 mb-1">Image URL (ใส่ URL รูป หรือเลือกจาก Library)</p>
+                  <p style={{ fontSize: 11, fontWeight: 500, color: '#94a3b8', marginBottom: 4, marginTop: 0 }}>Image URL</p>
                   <input type="url" value={card.imageUrl}
                     onChange={e => setCard(c => ({...c, imageUrl: e.target.value}))}
-                    placeholder="https://example.com/image.jpg" className="input"/>
+                    placeholder="https://example.com/image.jpg" className="dark-input"/>
                 </div>
               </div>
             </div>
 
             {/* ── IMAGE LIBRARY ── */}
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-              <div className="flex items-center justify-between mb-3">
-                <p className="label mb-0">Image Library ({imageLibrary.length})</p>
-                <div className="flex items-center gap-2">
+            <div className="dark-section">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <p className="dark-label" style={{ margin: 0 }}>Image Library ({imageLibrary.length})</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <button onClick={() => setLibView('grid')}
-                    className={`p-1.5 rounded ${libView==='grid' ? 'bg-teal-100 text-teal-600' : 'text-gray-400 hover:bg-gray-100'}`}>
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                    style={{ padding: '5px', borderRadius: 6, border: 'none', cursor: 'pointer', background: libView === 'grid' ? 'rgba(45,212,191,0.15)' : 'transparent', color: libView === 'grid' ? '#2dd4bf' : '#64748b' }}>
+                    <svg width="15" height="15" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 0h7v7h-7z"/>
                     </svg>
                   </button>
                   <button onClick={() => setLibView('list')}
-                    className={`p-1.5 rounded ${libView==='list' ? 'bg-teal-100 text-teal-600' : 'text-gray-400 hover:bg-gray-100'}`}>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    style={{ padding: '5px', borderRadius: 6, border: 'none', cursor: 'pointer', background: libView === 'list' ? 'rgba(45,212,191,0.15)' : 'transparent', color: libView === 'list' ? '#2dd4bf' : '#64748b' }}>
+                    <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16"/>
                     </svg>
                   </button>
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    className="btn-primary flex items-center gap-1.5 text-xs px-3 py-1.5">
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', background: '#0d9488', color: 'white', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/>
                     </svg>
                     Upload
                   </button>
                   <input ref={fileInputRef} type="file" accept="image/*" multiple
-                    className="hidden" onChange={handleFileUpload}/>
+                    style={{ display: 'none' }} onChange={handleFileUpload}/>
                 </div>
               </div>
 
               {/* Add by URL */}
-              <div className="flex gap-2 mb-3">
+              <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
                 <input
                   type="url"
-                  placeholder="วาง URL รูปภาพแล้วกด +"
-                  className="input flex-1 text-xs"
+                  placeholder="วาง URL รูปภาพแล้วกด Enter หรือ +"
+                  className="dark-input"
+                  style={{ flex: 1, fontSize: 12 }}
+                  id="img-url-input"
                   onKeyDown={e => {
                     if (e.key === 'Enter') { addImageUrl(e.target.value); e.target.value = ''; }
                   }}
-                  id="img-url-input"
                 />
                 <button
                   onClick={() => {
                     const input = document.getElementById('img-url-input');
                     if (input?.value) { addImageUrl(input.value); input.value = ''; }
                   }}
-                  className="btn-secondary px-3 text-lg font-bold leading-none">
+                  style={{ padding: '7px 12px', background: '#1e293b', border: '1px solid #334155', color: '#2dd4bf', borderRadius: 8, fontSize: 16, fontWeight: 700, cursor: 'pointer', lineHeight: 1 }}>
                   +
                 </button>
               </div>
 
               {imageLibrary.length === 0 ? (
-                <div className="text-center py-8 text-gray-300">
-                  <svg className="w-10 h-10 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div style={{ textAlign: 'center', padding: '32px 0', color: '#334155' }}>
+                  <svg width="40" height="40" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ margin: '0 auto 8px', display: 'block' }}>
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                       d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
                   </svg>
-                  <p className="text-sm">ยังไม่มีรูปภาพ</p>
-                  <p className="text-xs mt-1">อัปโหลดหรือวาง URL รูปภาพ</p>
+                  <p style={{ fontSize: 13, margin: '0 0 4px', color: '#475569' }}>ยังไม่มีรูปภาพ</p>
+                  <p style={{ fontSize: 11, margin: 0, color: '#334155' }}>อัปโหลดหรือวาง URL รูปภาพ</p>
                 </div>
               ) : libView === 'grid' ? (
-                <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(72px, 1fr))', gap: 8 }}>
                   {imageLibrary.map(img => (
                     <div
                       key={img.id}
-                      className={`relative group aspect-square rounded-lg overflow-hidden cursor-pointer border-2 transition ${card.imageUrl === img.url ? 'border-teal-500 shadow-md' : 'border-transparent hover:border-teal-300'}`}
+                      style={{ position: 'relative', aspectRatio: '1', borderRadius: 8, overflow: 'hidden', cursor: img.loading ? 'default' : 'pointer', border: `2px solid ${card.imageUrl === img.url ? '#2dd4bf' : 'transparent'}`, boxShadow: card.imageUrl === img.url ? '0 0 0 1px #2dd4bf40' : 'none', transition: 'border-color 0.15s' }}
                       onClick={() => !img.loading && selectImage(img.url)}
                     >
-                      <img src={img.url} alt="" className="w-full h-full object-cover"/>
+                      <img src={img.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}/>
                       {img.loading && (
-                        <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-1">
-                          <svg className="w-5 h-5 text-white animate-spin" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" style={{ animation: 'spin 1s linear infinite', color: 'white' }}>
+                            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" style={{ opacity: 0.25 }}/>
+                            <path fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" style={{ opacity: 0.75 }}/>
                           </svg>
-                          <span className="text-white text-xs">กำลังอัปโหลด...</span>
+                          <span style={{ color: 'white', fontSize: 9 }}>อัปโหลด...</span>
                         </div>
                       )}
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition flex items-center justify-center">
-                        <button
-                          onClick={e => { e.stopPropagation(); removeImage(img.id); }}
-                          className="hidden group-hover:flex w-6 h-6 bg-red-500 rounded-full items-center justify-center text-white"
+                      {!img.loading && (
+                        <div className="img-overlay" style={{ position: 'absolute', inset: 0, background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.15s' }}
+                          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.35)'; e.currentTarget.querySelector('button').style.display = 'flex'; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.querySelector('button').style.display = 'none'; }}
                         >
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/>
-                          </svg>
-                        </button>
-                      </div>
+                          <button
+                            onClick={e => { e.stopPropagation(); removeImage(img.id); }}
+                            style={{ display: 'none', width: 22, height: 22, background: '#ef4444', borderRadius: '50%', border: 'none', cursor: 'pointer', alignItems: 'center', justifyContent: 'center', color: 'white' }}
+                          >
+                            <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/>
+                            </svg>
+                          </button>
+                        </div>
+                      )}
                       {card.imageUrl === img.url && (
-                        <div className="absolute top-1 left-1 w-4 h-4 bg-teal-500 rounded-full flex items-center justify-center">
-                          <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div style={{ position: 'absolute', top: 4, left: 4, width: 16, height: 16, background: '#0d9488', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <svg width="10" height="10" fill="none" stroke="white" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7"/>
                           </svg>
                         </div>
@@ -887,19 +887,22 @@ export default function Tool() {
                   ))}
                 </div>
               ) : (
-                <div className="space-y-1.5">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {imageLibrary.map(img => (
                     <div
                       key={img.id}
                       onClick={() => selectImage(img.url)}
-                      className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer border transition ${card.imageUrl === img.url ? 'border-teal-400 bg-teal-50' : 'border-gray-100 hover:bg-gray-50'}`}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px', borderRadius: 8, cursor: 'pointer', border: `1px solid ${card.imageUrl === img.url ? '#2dd4bf' : '#334155'}`, background: card.imageUrl === img.url ? 'rgba(45,212,191,0.07)' : 'transparent', transition: 'all 0.15s' }}
                     >
-                      <img src={img.url} alt="" className="w-10 h-10 object-cover rounded-lg flex-shrink-0"/>
-                      <p className="text-xs text-gray-600 truncate flex-1">{img.name || img.url}</p>
+                      <img src={img.url} alt="" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }}/>
+                      <p style={{ fontSize: 11, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, margin: 0 }}>{img.name || img.url}</p>
                       <button
                         onClick={e => { e.stopPropagation(); removeImage(img.id); }}
-                        className="flex-shrink-0 text-gray-300 hover:text-red-500 transition">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', color: '#475569', display: 'flex', padding: 4, borderRadius: 4, transition: 'color 0.15s' }}
+                        onMouseEnter={e => e.currentTarget.style.color = '#ef4444'}
+                        onMouseLeave={e => e.currentTarget.style.color = '#475569'}
+                      >
+                        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/>
                         </svg>
                       </button>
@@ -907,47 +910,88 @@ export default function Tool() {
                   ))}
                 </div>
               )}
+
+              {/* Card Preview */}
+              {card.imageUrl && (
+                <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #334155' }}>
+                  <p className="dark-label">Card Preview</p>
+                  <div style={{ maxWidth: 340, margin: '0 auto', border: '1px solid #334155', borderRadius: 10, overflow: 'hidden', boxShadow: '0 4px 24px rgba(0,0,0,0.3)' }}>
+                    <div style={{ position: 'relative', background: '#0f172a', aspectRatio: '1.91/1', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <img
+                        src={card.imageUrl}
+                        alt="card preview"
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                        onError={e => { e.target.style.display = 'none'; }}
+                      />
+                    </div>
+                    <div style={{ background: '#242f3d', padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <p style={{ fontSize: 10, color: '#8899a6', textTransform: 'uppercase', fontWeight: 600, margin: '0 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {card.displayLink || 'www.example.com'}
+                        </p>
+                        <p style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {card.title || 'Card Title'}
+                        </p>
+                        {card.displayLinkDescription && (
+                          <p style={{ fontSize: 11, color: '#8899a6', margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {card.displayLinkDescription}
+                          </p>
+                        )}
+                      </div>
+                      {buttonType !== 'NO_BUTTON' && (
+                        <button style={{ flexShrink: 0, background: '#3d4f61', border: '1px solid #4a6278', color: '#e2e8f0', fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 6, cursor: 'default' }}>
+                          {BUTTON_TYPES.find(b => b.value === buttonType)?.label || 'Learn More'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
-          </div>{/* end scrollable */}
+          </div>
         </main>
 
         {/* ══════ RIGHT STATUS PANEL ══════ */}
         {postStatus.length > 0 && (
-          <aside className="w-56 flex-shrink-0 bg-white border-l border-gray-100 flex flex-col shadow-sm">
-            <div className="p-3 border-b border-gray-100">
-              <p className="label mb-0">สถานะการโพสต์</p>
+          <aside style={{ width: 220, flexShrink: 0, background: '#1e293b', borderLeft: '1px solid #334155', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '12px 14px', borderBottom: '1px solid #334155' }}>
+              <p className="dark-label" style={{ margin: 0 }}>สถานะการโพสต์</p>
             </div>
-            <div className="flex-1 overflow-y-auto p-3 space-y-2">
+            <div style={{ flex: 1, overflowY: 'auto', padding: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
               {postStatus.map(({ page, status, error }) => {
                 const s = STATUS_COLORS[status] || STATUS_COLORS.pending;
                 return (
-                  <div key={page.id} className={`${s.bg} rounded-lg p-2.5`}>
-                    <div className="flex items-center gap-2">
+                  <div key={page.id} style={{ padding: '10px', borderRadius: 8, background: '#0f172a', border: '1px solid #334155' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <img
                         src={page.picture?.data?.url || `https://graph.facebook.com/${page.id}/picture?type=square`}
-                        className="w-6 h-6 rounded-full object-cover flex-shrink-0"
+                        style={{ width: 24, height: 24, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
                         alt=""
                       />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-gray-700 truncate">{page.name}</p>
-                        <p className="text-xs text-gray-500 truncate">{page.id}</p>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 12, fontWeight: 600, color: '#cbd5e1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>{page.name}</p>
+                        <p style={{ fontSize: 10, color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>{page.id}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1.5 mt-1.5">
-                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${s.dot}`}/>
-                      <span className={`text-xs font-medium ${s.text}`}>{s.label}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+                      <div style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: s.dot.includes('animate') ? '#60a5fa' : s.dot.replace('bg-', '').replace('teal-400', '#2dd4bf').replace('slate-500', '#64748b').replace('red-500', '#ef4444') }} className={s.dot}/>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: s.text.includes('teal') ? '#2dd4bf' : s.text.includes('blue') ? '#60a5fa' : s.text.includes('red') ? '#f87171' : '#64748b' }}>{s.label}</span>
                     </div>
                     {error && (
-                      <p className="text-xs text-red-500 mt-1 leading-tight">{error}</p>
+                      <p style={{ fontSize: 10, color: '#f87171', marginTop: 4, lineHeight: 1.4, wordBreak: 'break-word' }}>{error}</p>
                     )}
                   </div>
                 );
               })}
             </div>
             {!isPosting && (
-              <div className="p-3 border-t border-gray-100">
-                <button onClick={() => setPostStatus([])} className="w-full btn-secondary text-xs">
+              <div style={{ padding: '10px', borderTop: '1px solid #334155' }}>
+                <button onClick={() => setPostStatus([])}
+                  style={{ width: '100%', padding: '7px', background: 'transparent', border: '1px solid #334155', color: '#64748b', borderRadius: 8, fontSize: 12, cursor: 'pointer', transition: 'all 0.15s' }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = '#475569'; e.currentTarget.style.color = '#94a3b8'; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = '#334155'; e.currentTarget.style.color = '#64748b'; }}
+                >
                   ล้างสถานะ
                 </button>
               </div>
@@ -955,6 +999,18 @@ export default function Tool() {
           </aside>
         )}
       </div>
+
+      <style>{`
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        * { box-sizing: border-box; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+        select option { background: #1e293b; color: #e2e8f0; }
+        input[type="datetime-local"]::-webkit-calendar-picker-indicator { filter: invert(0.5); cursor: pointer; }
+      `}</style>
     </>
   );
 }
