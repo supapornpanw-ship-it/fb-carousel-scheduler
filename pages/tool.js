@@ -51,6 +51,9 @@ export default function Tool() {
   const fileInputRef = useRef(null);
   const imageHashCache = useRef({});
 
+  // ป้องกัน hydration mismatch
+  const [mounted, setMounted] = useState(false);
+
   // Auth via Extension only (ไม่ใช้ Facebook App / OAuth)
   const [user, setUser]             = useState(null);
   const [extAvailable, setExtAvailable] = useState(false);
@@ -91,7 +94,10 @@ export default function Tool() {
   const [isPosting, setIsPosting]   = useState(false);
 
   // ─── Init ─────────────────────────────────────────────────────────
+  useEffect(() => { setMounted(true); }, []);
+
   useEffect(() => {
+    if (!mounted) return;
     try {
       const saved = JSON.parse(localStorage.getItem('fb_image_library') || '[]');
       setImageLibrary(saved);
@@ -100,7 +106,7 @@ export default function Tool() {
     if (savedAd) setAdAccountId(savedAd);
 
     setTimeout(() => loadFromExtension(), 800);
-  }, []);
+  }, [mounted]);
 
   const loadFromExtension = async () => {
     setExtLoading(true);
@@ -374,6 +380,8 @@ export default function Tool() {
   };
 
   // ─── Render ───────────────────────────────────────────────────────
+  if (!mounted) return null;
+
   return (
     <>
       <Head>
